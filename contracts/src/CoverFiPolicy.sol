@@ -273,9 +273,11 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///   InvalidPrincipal — principal == 0
     ///   InvalidKBps      — kBps > BPS_DENOMINATOR
     ///
-    /// @return base    Q × (1 − k) × a, in token base units.
-    /// @return floor_  F × a, in token base units (the 5% floor).
-    /// @return premium max(base, floor_), what `buyPolicy` will charge.
+    /// @param principal Insured amount `a`, in token base units.
+    /// @param kBps      Implied probability snapshot in bps. 0..10_000.
+    /// @return base     Q × (1 − k) × a, in token base units.
+    /// @return floor_   F × a, in token base units (the 5% floor).
+    /// @return premium  max(base, floor_), what `buyPolicy` will charge.
     function quotePremium(uint256 principal, uint16 kBps)
         public
         view
@@ -451,7 +453,14 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///         elapsed reaches RELEASE_PERIOD. The multiply-before-
     ///         divide order matches PRD §3.2's "no float, no
     ///         precision loss" rule.
-    function releasedOf(uint256 policyId) public view returns (uint256) {
+    ///
+    /// @param  policyId Id of the policy to read.
+    /// @return amount   Released principal in token base units.
+    function releasedOf(uint256 policyId)
+        public
+        view
+        returns (uint256 amount)
+    {
         Policy storage p = policies[policyId];
         if (
             p.status != PolicyStatus.Releasing &&
@@ -473,7 +482,14 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///         Defensive `≤` so a hypothetical `claimed` overrun
     ///         surfaces as 0 (and `claim` rejects with NothingToClaim)
     ///         rather than reverting on uint underflow.
-    function claimableOf(uint256 policyId) public view returns (uint256) {
+    ///
+    /// @param  policyId Id of the policy to read.
+    /// @return amount   Claimable amount in token base units.
+    function claimableOf(uint256 policyId)
+        public
+        view
+        returns (uint256 amount)
+    {
         uint256 released = releasedOf(policyId);
         uint256 already = policies[policyId].claimed;
         if (released <= already) return 0;
