@@ -239,6 +239,13 @@ export const en = {
   errOrderTakenTitle: "Order already insured",
   errOrderTakenMsg:
     "This Signa order has already been insured. Refresh the insurance list to see what's still available.",
+  errLoadTitle: "Couldn't load",
+  errLoadMsg:
+    "There was a problem loading this from the database. Check your connection and try again.",
+  retryBtn: "Try again",
+  notFoundPolicyT: "Policy not found",
+  notFoundPolicyD:
+    "We couldn't find this policy under your wallet. It may have been minted by a different address.",
   dismiss: "Dismiss",
   searchPh: "Search market or ID",
   sortPremiumHi: "Premium ↓",

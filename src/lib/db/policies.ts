@@ -1,6 +1,6 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import type { Order } from "@/lib/mock";
+import type { Order, OptionEn, OptionZh, Policy, PolicyStatus } from "@/lib/mock";
 
 /**
  * Data-access layer for the `policies` table.
@@ -104,4 +104,137 @@ function classifyError(error: PostgrestError): InsertPolicyResult {
     return { ok: false, reason: "order-already-insured" };
   }
   return { ok: false, reason: "other", message: error.message };
+}
+
+// ====================================================================
+// Read paths
+// ====================================================================
+
+/** Tagged result for the list query. */
+export type ListPoliciesResult =
+  | { ok: true; policies: Policy[] }
+  | { ok: false; message: string };
+
+/** Tagged result for the single-policy fetch. `policy: null` means
+ *  the id doesn't exist OR doesn't belong to the requesting wallet
+ *  (the page treats these the same — both are "not found for you"). */
+export type GetPolicyResult =
+  | { ok: true; policy: Policy | null }
+  | { ok: false; message: string };
+
+/**
+ * List policies owned by a wallet, newest first. Address is
+ * lowercased to match the DB's canonical-lowercase storage (PK index
+ * is plain b-tree on the column).
+ */
+export async function listPoliciesByOwner(
+  ownerAddress: string,
+): Promise<ListPoliciesResult> {
+  const { data, error } = await supabase
+    .from("policies")
+    .select("*")
+    .eq("owner_address", ownerAddress.toLowerCase())
+    .order("created_at", { ascending: false });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true, policies: (data ?? []).map(rowToPolicy) };
+}
+
+/**
+ * Fetch a single policy by id, scoped to the requesting wallet.
+ * Returns `policy: null` if either the id is unknown or the row
+ * exists but belongs to a different address — the detail page treats
+ * both as "not found", which matches user expectation (you can only
+ * see your own policies).
+ */
+export async function getPolicyById(
+  id: string,
+  ownerAddress: string,
+): Promise<GetPolicyResult> {
+  const { data, error } = await supabase
+    .from("policies")
+    .select("*")
+    .eq("id", id)
+    .eq("owner_address", ownerAddress.toLowerCase())
+    .maybeSingle();
+  if (error) return { ok: false, message: error.message };
+  return { ok: true, policy: data ? rowToPolicy(data) : null };
+}
+
+// ====================================================================
+// DB-row → frontend `Policy` mapper
+// ====================================================================
+
+/** Raw row shape as it comes back from supabase-js. `numeric` columns
+ *  arrive as STRING — see `supabase/schema.sql` header for why. */
+interface PolicyRow {
+  id: string;
+  owner_address: string;
+  signa_order_id: string;
+  category_en: string;
+  category_zh: string;
+  market_en: string;
+  market_zh: string;
+  option_en: string;
+  option_zh: string;
+  principal: string;
+  k_snapshot: string;
+  premium: string;
+  claimed: string;
+  status: string;
+  created_at: string;          // ISO timestamp
+  settled_at: string | null;
+  voided_at: string | null;
+}
+
+/**
+ * Map a DB row to the in-memory `Policy` shape consumed by pricing
+ * helpers (releasedOf / claimableOf / bucketOf) and detail/list UI.
+ *
+ * Two conversions matter:
+ *   1. `numeric` columns (string in JSON) → `Number(...)` for plain
+ *      JS-number arithmetic. Safe at USDC magnitudes; will be re-
+ *      thought when wei lands (CLAUDE.md §8).
+ *   2. `timestamptz` columns (ISO string) → relative-day fields
+ *      (`mintedDaysAgo` / `settledDaysAgo` / `voidedDaysAgo`). The
+ *      Policy type uses days-since rather than absolute dates because
+ *      that's what the pricing + timeline helpers consume.
+ *
+ * `claimed` is only attached when non-zero (mirrors the mock seed's
+ * convention of omitting the field for not-yet-claimed policies).
+ */
+function rowToPolicy(row: PolicyRow): Policy {
+  const now = Date.now();
+  const policy: Policy = {
+    id: row.id,
+    order: row.signa_order_id,
+    catEn: row.category_en,
+    catZh: row.category_zh,
+    mEn: row.market_en,
+    mZh: row.market_zh,
+    optEn: row.option_en as OptionEn,
+    optZh: row.option_zh as OptionZh,
+    a: Number(row.principal),
+    k: Number(row.k_snapshot),
+    premium: Number(row.premium),
+    status: row.status as PolicyStatus,
+    mintedDaysAgo: daysBetween(row.created_at, now),
+  };
+  if (row.settled_at) {
+    policy.settledDaysAgo = daysBetween(row.settled_at, now);
+  }
+  if (row.voided_at) {
+    policy.voidedDaysAgo = daysBetween(row.voided_at, now);
+  }
+  const claimedNum = Number(row.claimed);
+  if (claimedNum > 0) {
+    policy.claimed = claimedNum;
+  }
+  return policy;
+}
+
+/** Whole-day floor of (now − iso). Clamped to ≥ 0 so a slightly-
+ *  future server clock doesn't surface negatives. */
+function daysBetween(iso: string, nowMs: number): number {
+  const t = new Date(iso).getTime();
+  return Math.max(0, Math.floor((nowMs - t) / 86_400_000));
 }

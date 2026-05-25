@@ -1,14 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 import { useHasMounted } from "@/hooks/useHasMounted";
+import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Panel } from "@/components/ui/Panel";
 import { Spinner } from "@/components/ui/Spinner";
 import { GatedView } from "@/components/policies/GatedView";
+import { applyClaimMutation } from "@/components/policies/PoliciesPage";
 import { useT } from "@/hooks/useT";
+import { getPolicyById } from "@/lib/db/policies";
+import type { Policy } from "@/lib/mock";
+import { claimableOf } from "@/lib/pricing";
 import { money } from "@/lib/format";
 import { useSimulationStore } from "@/stores/simulation";
 import { useToast } from "@/stores/toast";
@@ -24,49 +29,95 @@ interface Props {
 /** Simulated single-claim latency — matches prototype's setTimeout. */
 const CLAIM_DELAY_MS = 1050;
 
+/** DB-fetch lifecycle for the detail screen. */
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "error" }
+  | { kind: "notFound" }
+  | { kind: "ready"; policy: Policy };
+
 /**
  * /policies/[policyId] — single-policy detail screen.
  *
- * Three render paths:
- *   - disconnected → GatedView (same as /policies)
- *   - policy not found → NotFound (link back to /policies)
- *   - otherwise → certificate + status-dependent block + timeline
+ * Policy data now comes from Supabase, scoped to (id, owner_address).
+ * If the row doesn't exist OR belongs to a different wallet, we
+ * collapse both cases to "not found" — you can only see your own
+ * policies. The fetch lifecycle has four observable states:
  *
- * The status-dependent block branches:
- *   releasing | completed → ReleaseBlock (curve + relrow + claim or note)
- *   active | hit | void   → StatusBlock  (plain text explanation)
+ *   loading  → existing gated blur skeleton (hideCard)
+ *   error    → centered error card with a retry button
+ *   notFound → existing NotFoundView (now with policy-specific copy)
+ *   ready    → certificate + status block + timeline
  *
- * Single-policy Claim flips the spinner overlay, after 1.05s calls
- * `simulationStore.claimPolicy(id)` and fires a toast. The same store
- * mutation drives /policies overview cells too (Zustand subscription).
+ * Claim button mirrors PoliciesPage: applies the lifecycle change
+ * to local state immediately (so the UI reflects the claim), and
+ * still calls `store.claimPolicy()` so balance + activity update for
+ * any policies that were also minted this session. DB-persisted claim
+ * writes are the next step.
  */
 export function PolicyDetailPage({ policyId }: Props) {
   const t = useT();
-  const { isConnected, status } = useAccount();
+  const { isConnected, status, address } = useAccount();
   const mounted = useHasMounted();
-  const policy = useSimulationStore((s) =>
-    s.policies.find((p) => p.id === policyId),
-  );
-  const claimPolicy = useSimulationStore((s) => s.claimPolicy);
+  const claimPolicyStore = useSimulationStore((s) => s.claimPolicy);
   const showToast = useToast();
 
   const [busy, setBusy] = useState(false);
+  const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
+
+  const fetchPolicy = useCallback(async () => {
+    if (!address) return;
+    setLoadState({ kind: "loading" });
+    const result = await getPolicyById(policyId, address);
+    if (!result.ok) {
+      setLoadState({ kind: "error" });
+      return;
+    }
+    if (!result.policy) {
+      setLoadState({ kind: "notFound" });
+      return;
+    }
+    setLoadState({ kind: "ready", policy: result.policy });
+  }, [policyId, address]);
+
+  // Initial fetch + re-fetch when the wallet or route param changes.
+  useEffect(() => {
+    if (isConnected && address) {
+      void fetchPolicy();
+    }
+  }, [isConnected, address, fetchPolicy]);
 
   // Defer gate decision until wagmi settles — see InsuranceList for context.
   if (!mounted || status === "connecting" || status === "reconnecting") {
     return <GatedView hideCard />;
   }
   if (!isConnected) return <GatedView />;
-  if (!policy) return <NotFoundView />;
+
+  if (loadState.kind === "loading") return <GatedView hideCard />;
+  if (loadState.kind === "error") return <LoadErrorView onRetry={fetchPolicy} />;
+  if (loadState.kind === "notFound") return <NotFoundView />;
+
+  const policy = loadState.policy;
 
   const handleClaim = () => {
     if (busy) return;
     setBusy(true);
     setTimeout(() => {
-      const amount = claimPolicy(policyId);
+      const claimable = claimableOf(policy);
+      if (claimable > 0) {
+        // Apply the same lifecycle transition the store does, so the
+        // certificate + release block + timeline reflect the claim
+        // without re-fetching.
+        const mutated = applyClaimMutation(policy);
+        setLoadState({ kind: "ready", policy: mutated });
+      }
+      // Mirror to the in-memory store so the global balance +
+      // activity feed update for in-session-minted policies (no-op
+      // for DB-only policies). The DB-write path lands next step.
+      claimPolicyStore(policyId);
       setBusy(false);
-      if (amount > 0) {
-        showToast(t.claimedToast(money(amount)), { kind: "info" });
+      if (claimable > 0) {
+        showToast(t.claimedToast(money(claimable)), { kind: "info" });
       }
     }, CLAIM_DELAY_MS);
   };
@@ -134,11 +185,35 @@ function NotFoundView() {
         <div className="e-ic">
           <Icon name="empty" size={20} />
         </div>
-        <div className="e-t">{t.emptyPoliciesT}</div>
-        <div className="e-d">{t.emptyPoliciesD}</div>
+        <div className="e-t">{t.notFoundPolicyT}</div>
+        <div className="e-d">{t.notFoundPolicyD}</div>
         <Link href="/policies" className="btn btn-ghost btn-sm">
           {t.pfTitle}
         </Link>
+      </div>
+    </div>
+  );
+}
+
+function LoadErrorView({ onRetry }: { onRetry: () => void }) {
+  const t = useT();
+  return (
+    <div className="page wrap">
+      <div className="page-head">
+        <div className="crumb">
+          <Link href="/policies">{t.pfTitle}</Link>
+        </div>
+        <div className="pagetitle">{t.contractTitle}</div>
+      </div>
+      <div className="empty2">
+        <div className="e-ic">
+          <Icon name="empty" size={20} />
+        </div>
+        <div className="e-t">{t.errLoadTitle}</div>
+        <div className="e-d">{t.errLoadMsg}</div>
+        <Button variant="ghost" size="sm" onClick={onRetry}>
+          {t.retryBtn}
+        </Button>
       </div>
     </div>
   );
