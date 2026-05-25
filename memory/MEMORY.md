@@ -1,0 +1,3 @@
+- [Phase-1 architectural decisions](project_decisions.md) — Zustand, USDC display literal, admin backend deferred
+- [Step progression rule](step_progression.md) — one step at a time, stop and wait for browser verification
+- [Don't start dev server](feedback_no_dev_server.md) — user keeps `npm run dev` running themselves; only edit files

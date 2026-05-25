@@ -1,0 +1,2642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoverFi Protocol — Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --signal:#5577FF; --signal-2:#7C97FF;
+    --good:#3FB079;
+    --bad:#E0564F; --warn:#D9963F;
+    --good-2:#5EC795; --bad-soft:rgba(224,86,79,0.13); --warn-soft:rgba(217,150,63,0.14);
+    --sans:'IBM Plex Sans','Noto Sans SC',ui-sans-serif,system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+    --r-s:2px; --r-m:3px; --r-l:4px;
+    --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  /* dark (default) */
+  :root,[data-theme="dark"]{
+    --ink:#08080A; --surface:#101013; --surface-2:#16161A; --surface-3:#1D1D22;
+    --line:rgba(255,255,255,0.08); --line-2:rgba(255,255,255,0.13); --line-3:rgba(255,255,255,0.22);
+    --text:#F0F0F2; --text-2:#9B9BA3; --text-3:#5E5E67;
+    --signal-soft:rgba(85,119,255,0.12); --good-soft:rgba(63,176,121,0.13);
+    --glow:rgba(85,119,255,0.07); --hairtex:rgba(255,255,255,0.012);
+    --header-bg:rgba(8,8,10,0.82); --overlay-bg:rgba(5,5,7,0.8);
+    --card-shadow:none; --card-shadow-hover:none;
+  }
+  [data-theme="light"]{
+    --ink:#FFFFFF; --surface:#FFFFFF; --surface-2:#F6F7F9; --surface-3:#EDEEF1;
+    --line:rgba(17,18,26,0.13); --line-2:rgba(17,18,26,0.20); --line-3:rgba(17,18,26,0.34);
+    --text:#14151A; --text-2:#565862; --text-3:#8A8C96;
+    --signal-soft:rgba(85,119,255,0.09); --good-soft:rgba(45,150,100,0.11);
+    --glow:rgba(85,119,255,0.05); --hairtex:rgba(17,18,26,0.022);
+    --header-bg:rgba(255,255,255,0.88); --overlay-bg:rgba(20,21,26,0.42);
+    --card-shadow:none; --card-shadow-hover:none;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  html{-webkit-text-size-adjust:100%;}
+  body{background:var(--ink);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    transition:background .3s var(--ease),color .3s var(--ease);}
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:radial-gradient(900px 480px at 78% -8%,var(--glow),transparent 70%);}
+  a{color:inherit;text-decoration:none;}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+  [data-act]{-webkit-tap-highlight-color:transparent;}
+  ::selection{background:rgba(85,119,255,0.3);}
+  .wrap{width:100%;margin:0 auto;padding:0 40px;}
+  .mono{font-family:var(--mono);}
+  [data-theme] *{transition:background-color .3s var(--ease),border-color .3s var(--ease),color .25s var(--ease);}
+
+  header.site{position:sticky;top:0;z-index:60;background:var(--header-bg);
+    backdrop-filter:blur(14px) saturate(140%);border-bottom:1px solid var(--line);}
+  .bar{display:flex;align-items:center;height:64px;gap:12px;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-0.02em;font-size:17px;flex:none;}
+  .brand .p{color:var(--text-3);font-weight:400;}
+  .brand svg{width:25px;height:25px;color:var(--text);}
+  .grow{flex:1;}
+
+  /* desktop inline nav */
+  .navlinks{display:flex;align-items:center;gap:2px;margin-left:14px;}
+  .navlinks a{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text-2);
+    padding:8px 13px;border-radius:var(--r-s);cursor:pointer;
+    transition:color .15s,background .15s;}
+  .navlinks a:hover{color:var(--text);}
+  .navlinks a.on{color:var(--text);background:var(--surface-2);}
+  .navlinks a .lk{display:flex;color:var(--text-3);}
+
+  #nav-right{display:flex;align-items:center;gap:8px;flex:none;}
+  .iconbtn{width:38px;height:38px;border:1px solid var(--line-2);border-radius:var(--r-s);
+    display:flex;align-items:center;justify-content:center;color:var(--text-2);flex:none;
+    transition:border-color .15s,color .15s,background .15s;-webkit-tap-highlight-color:transparent;}
+  .iconbtn:hover{border-color:var(--line-3);color:var(--text);}
+  .iconbtn:active{transform:scale(.96);}
+  .seg{display:flex;border:1px solid var(--line-2);border-radius:var(--r-s);overflow:hidden;flex:none;}
+  .seg button{padding:8px 14px;font-size:13px;font-family:var(--mono);color:var(--text-3);
+    transition:.15s;-webkit-tap-highlight-color:transparent;}
+  .seg button.on{background:var(--surface-2);color:var(--text);}
+  .addr{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:13px;
+    border:1px solid var(--line-2);border-radius:var(--r-s);padding:8px 12px;transition:border-color .15s;}
+  .addr:hover{border-color:var(--line-3);}
+  .addr .live{width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--good-soft);}
+
+  /* burger: desktop hidden, mobile shown */
+  .burger{display:none;width:38px;height:38px;border:1px solid var(--line-2);border-radius:var(--r-s);
+    align-items:center;justify-content:center;flex:none;
+    transition:border-color .15s,background .15s;-webkit-tap-highlight-color:transparent;}
+  .burger:hover{border-color:var(--line-3);background:var(--surface-2);}
+  .burger:active{transform:scale(.96);}
+  .burger span{display:block;width:15px;height:1.5px;background:var(--text);position:relative;}
+  .burger span::before,.burger span::after{content:"";position:absolute;left:0;width:15px;height:1.5px;background:var(--text);}
+  .burger span::before{top:-5px;}.burger span::after{top:5px;}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:var(--r-s);
+    padding:10px 17px;font-size:14px;font-weight:500;
+    transition:transform .14s var(--ease),background .15s,border-color .15s,
+      box-shadow .2s var(--ease),opacity .15s;white-space:nowrap;}
+  .btn:active{transform:scale(.98);}
+  .btn-primary{background:var(--text);color:var(--ink);font-weight:600;}
+  .btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px);
+    box-shadow:0 8px 20px -8px rgba(0,0,0,0.5);}
+  .btn-ghost{border:1px solid var(--line-2);color:var(--text);}
+  .btn-ghost:hover{border-color:var(--line-3);background:var(--surface-2);}
+  .btn-sm{padding:8px 13px;font-size:13px;}
+  .btn-block{width:100%;padding:13px;}
+  .btn[disabled]{opacity:.35;cursor:not-allowed;}
+  .btn[disabled]:hover{transform:none;box-shadow:none;}
+
+  /* drawer (slides from left) */
+  .drawer{position:fixed;inset:0;z-index:55;background:var(--overlay-bg);backdrop-filter:blur(4px);
+    opacity:0;pointer-events:none;transition:opacity .22s;}
+  .drawer.open{opacity:1;pointer-events:auto;}
+  .drawer-panel{position:absolute;top:0;left:0;bottom:0;width:min(86vw,340px);
+    background:var(--surface);border-right:1px solid var(--line-2);
+    padding:78px 18px calc(20px + env(safe-area-inset-bottom,0));
+    display:flex;flex-direction:column;
+    transform:translateX(-100%);transition:transform .3s var(--ease);
+    overflow-y:auto;}
+  .drawer.open .drawer-panel{transform:none;}
+  .d-sec{display:flex;flex-direction:column;gap:2px;}
+  .dnav{display:flex;align-items:center;gap:12px;padding:13px 12px;border-radius:var(--r-m);
+    color:var(--text-2);cursor:pointer;transition:background .15s,color .15s;
+    -webkit-tap-highlight-color:transparent;min-height:48px;}
+  .dnav:active{background:var(--surface-2);}
+  .dnav.on{background:var(--surface-2);color:var(--text);}
+  .dnav .dn-ic{width:20px;height:20px;display:flex;align-items:center;justify-content:center;
+    color:var(--text-3);flex:none;}
+  .dnav.on .dn-ic{color:var(--signal);}
+  .dnav .dn-l{font-size:15px;font-weight:500;}
+  .dnav .dlk{margin-left:6px;color:var(--text-3);display:flex;}
+  .dnav .dn-arr{margin-left:auto;color:var(--text-3);}
+  .d-divider{height:1px;background:var(--line);margin:14px 4px;}
+  .d-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:7px 12px;}
+  .d-row-l{font-size:14px;color:var(--text-2);}
+  .d-foot{margin-top:auto;padding-top:20px;}
+  .d-wallet{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12.5px;
+    color:var(--text-2);padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-s);
+    margin-bottom:9px;}
+  .d-wallet .live{width:6px;height:6px;border-radius:50%;background:var(--good);
+    box-shadow:0 0 0 3px var(--good-soft);flex:none;}
+  .d-wallet .d-bal{margin-left:auto;color:var(--text-3);}
+
+  .hero{position:relative;overflow:hidden;padding:56px 0 84px;}
+  .hero-grid-bg{position:absolute;inset:0;z-index:0;pointer-events:none;
+    background-image:
+      linear-gradient(var(--line) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:44px 44px;
+    -webkit-mask-image:radial-gradient(ellipse 80% 75% at 70% 25%,#000,transparent 75%);
+    mask-image:radial-gradient(ellipse 80% 75% at 70% 25%,#000,transparent 75%);
+    opacity:.7;}
+  .hero-cols{position:relative;z-index:1;display:grid;
+    grid-template-columns:1.05fr 0.92fr;gap:56px;align-items:center;}
+  .hero-in{min-width:0;}
+  .hero-eyebrow{display:inline-flex;align-items:center;gap:8px;
+    font-family:var(--mono);font-size:11px;letter-spacing:0.08em;text-transform:uppercase;
+    color:var(--text-2);border:1px solid var(--line-2);border-radius:2px;
+    padding:6px 11px;margin-bottom:22px;}
+  .hero-eyebrow .he-dot{width:6px;height:6px;border-radius:1px;background:var(--signal);flex:none;}
+  h1.h1{font-size:clamp(34px,3.8vw,52px);font-weight:600;letter-spacing:-0.035em;
+    line-height:1.05;margin:0 0 18px;}
+  .lede{font-size:16.5px;line-height:1.55;color:var(--text-2);max-width:520px;}
+  .cta-row{display:flex;gap:11px;margin-top:26px;flex-wrap:wrap;}
+  .hero-by{display:flex;align-items:center;gap:11px;margin-top:26px;}
+  .hero-by-l{font-family:var(--mono);font-size:11px;color:var(--text-3);
+    letter-spacing:0.06em;text-transform:uppercase;}
+  .hero-by-m{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;
+    letter-spacing:-0.005em;color:var(--text);
+    border:1px solid var(--line-2);border-radius:2px;padding:6px 12px 6px 9px;
+    background:var(--surface);}
+  .hero-by-m svg{width:18px;height:18px;color:var(--text);}
+
+  /* hero key visual — diagonal stacked policy cards */
+  .hero-visual{min-width:0;display:flex;align-items:center;justify-content:center;
+    transform:translateY(96px);}
+  .hv2-stage{position:relative;width:100%;max-width:432px;
+    padding:30px 26px 38px;
+    background:radial-gradient(ellipse 72% 60% at 50% 48%,var(--signal-soft),transparent 72%);}
+  .hv2-deck{position:relative;}
+
+  .hv2-card{border:1px solid var(--line-3);border-radius:var(--r-m);
+    background:var(--surface);padding:16px 17px 15px;
+    transition:transform .32s var(--ease),box-shadow .32s var(--ease);}
+  /* diagonal stack: front card anchors bottom-left, others offset up-right */
+  .hv2-card-c,.hv2-card-b{position:absolute;left:0;right:0;}
+  .hv2-card-c{transform:translate(58px,-66px) scale(0.9);
+    opacity:0.5;z-index:1;
+    box-shadow:0 12px 26px -16px rgba(0,0,0,0.4);}
+  .hv2-card-b{transform:translate(29px,-33px) scale(0.95);
+    opacity:0.78;z-index:2;
+    box-shadow:0 15px 30px -18px rgba(0,0,0,0.46);}
+  .hv2-card-a{position:relative;z-index:3;
+    box-shadow:0 28px 52px -22px rgba(0,0,0,0.58),0 5px 16px -5px rgba(0,0,0,0.34);}
+  .hv2-deck:hover .hv2-card-c{transform:translate(70px,-78px) scale(0.9);}
+  .hv2-deck:hover .hv2-card-b{transform:translate(35px,-39px) scale(0.95);}
+  .hv2-deck:hover .hv2-card-a{transform:translate(-6px,6px);}
+
+  .hv2-c-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .hv2-c-brand{display:flex;align-items:center;gap:7px;min-width:0;}
+  .hv2-c-mark{width:14px;height:14px;color:var(--text-2);flex:none;}
+  .hv2-c-id{font-family:var(--mono);font-size:9.5px;letter-spacing:0.05em;color:var(--text-3);}
+  .hv2-c-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);
+    font-size:8px;letter-spacing:0.06em;text-transform:uppercase;
+    border-radius:2px;padding:3px 6px;white-space:nowrap;flex:none;}
+  .hv2-c-badge.b-sig{color:var(--signal-2);border:1px solid rgba(85,119,255,0.4);
+    background:var(--signal-soft);}
+  .hv2-c-badge.b-good{color:var(--good);border:1px solid rgba(63,176,121,0.36);
+    background:var(--good-soft);}
+  .hv2-c-badge.b-mut{color:var(--text-2);border:1px solid var(--line-2);}
+  .hv2-c-dot{width:5px;height:5px;border-radius:50%;background:currentColor;}
+  .hv2-c-dot.live{animation:pulse 2s infinite;}
+  .hv2-c-mkt{font-size:13px;font-weight:600;letter-spacing:-0.01em;line-height:1.36;
+    color:var(--text);margin-top:12px;}
+  .hv2-c-div{height:1px;background:var(--line);margin:12px 0;}
+  .hv2-c-figs{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .hv2-c-k{font-family:var(--mono);font-size:8.5px;letter-spacing:0.07em;
+    text-transform:uppercase;color:var(--text-3);display:block;}
+  .hv2-c-v{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.01em;
+    color:var(--text);margin-top:5px;display:block;font-variant-numeric:tabular-nums;}
+  .hv2-c-v i{font-size:9.5px;font-style:normal;color:var(--text-3);font-weight:400;}
+  .hv2-c-v.accent{color:var(--signal-2);}
+  .hv2-c-rel{margin-top:13px;}
+  .hv2-c-rel-top{display:flex;justify-content:space-between;align-items:baseline;
+    margin-bottom:7px;}
+  .hv2-c-rel-pct{font-family:var(--mono);font-size:10px;font-weight:600;
+    color:var(--signal-2);font-variant-numeric:tabular-nums;}
+  .hv2-c-bar{height:5px;border-radius:1px;background:var(--surface-3);overflow:hidden;
+    border:1px solid var(--line);}
+  .hv2-c-bar i{display:block;height:100%;width:63%;background:var(--signal);
+    border-radius:1px;animation:hv2bar 1.15s cubic-bezier(.22,.61,.36,1) .5s both;}
+  .hv2-c-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin-top:13px;padding-top:11px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:8.5px;letter-spacing:0.05em;
+    text-transform:uppercase;color:var(--text-3);}
+  .hv2-c-foot b{font-weight:400;color:var(--text-2);}
+  .hv2-c-mini{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    margin-top:9px;}
+  .hv2-c-mini .mv{font-family:var(--mono);font-size:13px;font-weight:600;
+    color:var(--text);font-variant-numeric:tabular-nums;}
+  .hv2-c-mini .mv i{font-size:8.5px;font-style:normal;color:var(--text-3);font-weight:400;}
+  .hv2-c-mini .mk{font-family:var(--mono);font-size:8px;letter-spacing:0.06em;
+    text-transform:uppercase;color:var(--text-3);}
+  @keyframes hv2bar{from{width:0;}to{width:63%;}}
+  @media(prefers-reduced-motion:reduce){
+    .hv2-c-bar i{animation:none;}.hv2-c-dot.live{animation:none;}
+  }
+
+  /* metric band — quiet peak between hero and how-it-works */
+  .metricband{border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    background:var(--surface);position:relative;overflow:hidden;}
+  .metricband::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;
+    background:linear-gradient(90deg,transparent,var(--signal),transparent);
+    opacity:0.5;}
+  .mb-grid{display:grid;grid-template-columns:repeat(4,1fr);}
+  .mb-cell{padding:26px 24px 26px 0;position:relative;}
+  .mb-cell+.mb-cell{padding-left:24px;}
+  .mb-cell+.mb-cell::before{content:"";position:absolute;left:0;top:50%;
+    transform:translateY(-50%);width:1px;height:36px;background:var(--line);}
+  .mb-v{font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:-0.02em;
+    line-height:1;font-variant-numeric:tabular-nums;color:var(--text);
+    display:flex;align-items:baseline;}
+  .mb-cell:first-child .mb-v{color:var(--signal-2);}
+  .mb-l{font-size:12px;color:var(--text-2);margin-top:11px;line-height:1.4;
+    letter-spacing:-0.005em;}
+
+  section.block{padding:74px 0;border-top:1px solid var(--line);position:relative;}
+  .metricband+section.block{border-top:none;}
+  /* motif texture — faint, only on accented sections */
+  .block.motif-bg{overflow:hidden;}
+  .block.motif-bg::before{content:"";position:absolute;z-index:0;
+    width:340px;height:340px;right:-90px;top:-90px;pointer-events:none;
+    background-image:
+      repeating-linear-gradient(0deg,transparent 0 38px,var(--line) 38px 39px),
+      repeating-linear-gradient(90deg,transparent 0 38px,var(--line) 38px 39px);
+    -webkit-mask-image:radial-gradient(circle at 70% 30%,#000,transparent 70%);
+    mask-image:radial-gradient(circle at 70% 30%,#000,transparent 70%);
+    opacity:0.6;}
+  .block.motif-bg>.wrap{position:relative;z-index:1;}
+  .lbl{font-family:var(--mono);font-size:11px;color:var(--text-3);letter-spacing:0.09em;
+    text-transform:uppercase;display:flex;align-items:center;gap:11px;margin-bottom:28px;}
+  .lbl::before{content:"";width:13px;height:13px;flex:none;border-radius:3px;
+    border:1px solid var(--line-3);
+    background:
+      linear-gradient(var(--signal),var(--signal)) no-repeat 2.5px 2.5px;
+    background-size:4px 4px;}
+  .lbl::after{content:"";flex:1;height:1px;background:var(--line-2);}
+  .h2{font-size:clamp(22px,3vw,29px);font-weight:600;letter-spacing:-0.025em;}
+  .sectlede{font-size:15px;color:var(--text-2);max-width:540px;margin:8px 0 30px;}
+
+  /* how-it-works — steady, structured step cards */
+  .flow{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
+    margin-top:8px;}
+  .flow-step{position:relative;background:var(--surface);
+    border:1px solid var(--line-2);border-radius:var(--r-m);
+    padding:32px 26px 26px;display:flex;flex-direction:column;align-items:center;
+    text-align:center;transition:border-color .25s var(--ease),transform .25s var(--ease);}
+  .flow-step:hover{border-color:var(--line-3);transform:translateY(-3px);}
+  /* top accent line — lights up on scroll, sequentially */
+  .flow-step::before{content:"";position:absolute;left:-1px;right:-1px;top:-1px;
+    height:2px;background:var(--signal);border-radius:var(--r-m) var(--r-m) 0 0;
+    transform:scaleX(0);transform-origin:left;
+    transition:transform .6s cubic-bezier(.22,.61,.36,1);}
+  .flow.lit .flow-step::before{transform:scaleX(1);}
+  .flow.lit .flow-step:nth-child(2)::before{transition-delay:.16s;}
+  .flow.lit .flow-step:nth-child(3)::before{transition-delay:.32s;}
+  /* sequence number */
+  .fs-seq{font-family:var(--mono);font-size:11px;letter-spacing:0.14em;
+    color:var(--text-3);margin-bottom:20px;}
+  .fs-seq b{color:var(--signal-2);font-weight:500;}
+  /* steady icon badge — concentric, symmetric */
+  .fs-badge{position:relative;width:74px;height:74px;margin-bottom:22px;
+    display:flex;align-items:center;justify-content:center;flex:none;}
+  .fs-badge::before{content:"";position:absolute;inset:0;border-radius:var(--r-m);
+    border:1px solid var(--line-2);}
+  .fs-badge::after{content:"";position:absolute;inset:9px;border-radius:6px;
+    background:var(--signal-soft);border:1px solid rgba(85,119,255,0.22);}
+  .fs-badge svg{position:relative;z-index:1;width:30px;height:30px;color:var(--signal);}
+  .fs-body{display:flex;flex-direction:column;align-items:center;flex:1;width:100%;}
+  .fs-body h3{font-size:16.5px;font-weight:600;letter-spacing:-0.015em;
+    margin-bottom:9px;}
+  .fs-body p{font-size:13.5px;color:var(--text-2);line-height:1.6;
+    max-width:248px;flex:1;}
+  .fs-meta{margin-top:20px;padding-top:16px;width:100%;
+    border-top:1px solid var(--line);
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:0.05em;
+    text-transform:uppercase;color:var(--text-3);}
+  .fs-meta .fm-dot{width:5px;height:5px;border-radius:1px;background:var(--signal);
+    flex:none;}
+  /* connecting markers between cards */
+  .flow-link{position:absolute;top:50px;width:16px;height:16px;z-index:2;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--text-3);}
+  .flow-link svg{width:13px;height:13px;}
+  .flow-link.fl-1{left:calc(33.333% - 8px);}
+  .flow-link.fl-2{left:calc(66.666% - 8px);}
+
+  /* coverage values — feature + supporting grid */
+  .valwrap{display:grid;grid-template-columns:1.04fr 1fr;gap:16px;align-items:stretch;}
+  .val-feature{position:relative;background:var(--surface);
+    border:1px solid var(--line-2);border-radius:var(--r-m);
+    padding:30px 30px 28px;overflow:hidden;
+    display:flex;flex-direction:column;
+    transition:border-color .25s var(--ease);}
+  .val-feature:hover{border-color:var(--line-3);}
+  /* faint brand-motif watermark in the feature card */
+  .vf-motif{position:absolute;right:-44px;top:-44px;width:230px;height:230px;
+    pointer-events:none;}
+  .vf-motif .vfm-fr{fill:none;stroke:var(--text);stroke-width:4;stroke-opacity:0.06;}
+  .vf-motif .vfm-sq{fill:var(--signal);fill-opacity:0.05;}
+  .vf-tag{position:relative;font-family:var(--mono);font-size:10.5px;
+    letter-spacing:0.1em;text-transform:uppercase;color:var(--signal-2);
+    display:inline-flex;align-items:center;gap:8px;margin-bottom:auto;}
+  .vf-tag .vft-dot{width:5px;height:5px;border-radius:1px;background:var(--signal);}
+  .vf-icon{position:relative;width:52px;height:52px;border:1px solid var(--line-2);
+    border-radius:var(--r-m);display:flex;align-items:center;justify-content:center;
+    color:var(--signal);margin:30px 0 20px;}
+  .vf-icon::after{content:"";position:absolute;inset:7px;border-radius:5px;
+    background:var(--signal-soft);}
+  .vf-icon svg{position:relative;z-index:1;width:24px;height:24px;}
+  .vf-h{position:relative;font-size:22px;font-weight:600;letter-spacing:-0.025em;
+    margin-bottom:10px;}
+  .vf-p{position:relative;font-size:14px;color:var(--text-2);line-height:1.6;
+    max-width:380px;}
+  /* supporting list — three compact rows */
+  .val-list{display:flex;flex-direction:column;gap:0;
+    border:1px solid var(--line-2);border-radius:var(--r-m);overflow:hidden;
+    background:var(--surface);}
+  .val-row{display:flex;align-items:flex-start;gap:16px;padding:21px 22px;
+    border-bottom:1px solid var(--line);transition:background .2s var(--ease);}
+  .val-row:last-child{border-bottom:none;}
+  .val-row:hover{background:var(--surface-2);}
+  .vr-icon{width:38px;height:38px;border:1px solid var(--line-2);border-radius:var(--r-s);
+    display:flex;align-items:center;justify-content:center;color:var(--text-2);
+    flex:none;transition:color .2s var(--ease),border-color .2s var(--ease);}
+  .val-row:hover .vr-icon{color:var(--signal);border-color:rgba(85,119,255,0.34);}
+  .vr-icon svg{width:19px;height:19px;}
+  .vr-body{flex:1;min-width:0;padding-top:1px;}
+  .vr-h{font-size:14.5px;font-weight:600;letter-spacing:-0.01em;margin-bottom:4px;}
+  .vr-p{font-size:12.5px;color:var(--text-2);line-height:1.55;}
+  .vr-idx{font-family:var(--mono);font-size:10px;color:var(--text-3);
+    letter-spacing:0.06em;flex:none;padding-top:3px;}
+
+  .market-card{display:flex;align-items:center;gap:18px;border:1px solid var(--line-2);
+    border-radius:var(--r-m);padding:22px;background:var(--surface);
+    transition:border-color .2s var(--ease),background .2s var(--ease);}
+  .market-card:hover{border-color:var(--line-3);background:var(--surface-2);}
+  .market-logo{width:52px;height:52px;border-radius:var(--r-s);flex:none;
+    background:var(--surface-2);border:1px solid var(--line-2);
+    display:flex;align-items:center;justify-content:center;}
+  .market-logo svg{width:30px;height:30px;color:var(--text);}
+  .market-body{flex:1;min-width:0;}
+  .market-name{font-size:16px;font-weight:600;letter-spacing:-0.01em;}
+  .market-desc{font-size:13px;color:var(--text-2);margin-top:5px;line-height:1.55;}
+  .market-status{display:inline-flex;align-items:center;gap:7px;flex:none;
+    font-family:var(--mono);font-size:10.5px;color:var(--good);letter-spacing:0.05em;
+    text-transform:uppercase;
+    border:1px solid rgba(63,176,121,0.34);background:var(--good-soft);
+    border-radius:var(--r-s);padding:6px 11px;}
+  .market-status .ms-dot{width:6px;height:6px;border-radius:1px;background:var(--good);}
+  .market-note{font-family:var(--mono);font-size:11.5px;color:var(--text-3);margin-top:16px;
+    letter-spacing:0.02em;}
+
+  .faqwrap{border:1px solid var(--line-2);border-radius:var(--r-m);overflow:hidden;
+    background:var(--surface);}
+  .faq-item{border-top:1px solid var(--line);transition:background .2s var(--ease);}
+  .faq-item:first-child{border-top:none;}
+  .faq-item:last-child{border-bottom:none;}
+  .faq-item:hover{background:var(--surface-2);}
+  .faq-item.open{background:var(--surface-2);}
+  .q{display:flex;justify-content:space-between;gap:20px;padding:20px 16px;
+    font-size:15px;font-weight:600;letter-spacing:-0.01em;transition:color .15s;
+    cursor:pointer;}
+  .q .pm{color:var(--text-3);font-family:var(--mono);font-size:18px;
+    transition:transform .25s var(--ease),color .2s;flex:none;line-height:1;}
+  .faq-item.open .pm{transform:rotate(45deg);color:var(--signal);}
+  .ans{max-height:0;overflow:hidden;transition:max-height .3s var(--ease);}
+  .ans-in{padding:0 16px 22px;font-size:13.5px;color:var(--text-2);max-width:680px;
+    line-height:1.62;}
+  .faq-item.open .ans{max-height:320px;}
+
+  /* footer — brand closing */
+  footer.site{border-top:1px solid var(--line);position:relative;overflow:hidden;
+    background:var(--surface);}
+  footer.site::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;
+    background:linear-gradient(90deg,transparent,var(--signal),transparent);opacity:0.4;}
+  .foot-mark{position:absolute;left:50%;bottom:-150px;transform:translateX(-50%);
+    width:420px;height:420px;pointer-events:none;}
+  .foot-mark .fm-fr{fill:none;stroke:var(--text);stroke-width:4;stroke-opacity:0.05;}
+  .foot-mark .fm-sq{fill:var(--signal);fill-opacity:0.04;}
+  .foot-in{position:relative;z-index:1;padding:54px 0 46px;}
+  .foot-top{display:flex;justify-content:space-between;align-items:flex-start;
+    gap:32px;flex-wrap:wrap;padding-bottom:34px;border-bottom:1px solid var(--line);}
+  .foot-brand-blk{max-width:340px;}
+  .foot-brand{display:flex;align-items:center;gap:10px;font-weight:600;
+    letter-spacing:-0.02em;font-size:17px;}
+  .foot-brand svg{width:24px;height:24px;color:var(--text);}
+  .foot-brand .fb-p{color:var(--text-3);font-weight:400;}
+  .foot-tag{font-size:13px;color:var(--text-2);line-height:1.6;margin-top:14px;}
+  .foot-cols{display:flex;gap:56px;flex-wrap:wrap;}
+  .foot-col-h{font-family:var(--mono);font-size:10.5px;letter-spacing:0.08em;
+    text-transform:uppercase;color:var(--text-3);margin-bottom:14px;}
+  .foot-col a{display:block;font-size:13px;color:var(--text-2);padding:5px 0;
+    transition:color .15s;cursor:pointer;}
+  .foot-col a:hover{color:var(--text);}
+  .foot-bottom{display:flex;justify-content:space-between;align-items:center;
+    gap:16px;flex-wrap:wrap;padding-top:24px;}
+  .foot-meta{font-family:var(--mono);font-size:11px;color:var(--text-3);
+    letter-spacing:0.03em;}
+  .foot-status{display:inline-flex;align-items:center;gap:8px;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:0.05em;
+    text-transform:uppercase;color:var(--good);
+    border:1px solid rgba(63,176,121,0.3);background:var(--good-soft);
+    border-radius:var(--r-s);padding:5px 10px;}
+  .foot-status .fs-d{width:6px;height:6px;border-radius:50%;background:var(--good);
+    box-shadow:0 0 0 3px var(--good-soft);}
+
+  .page{padding-top:42px;padding-bottom:96px;}
+  .page-head{margin-bottom:26px;}
+  .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3);margin-bottom:14px;}
+  .crumb a:hover{color:var(--text-2);}
+  .pagetitle{font-size:26px;font-weight:600;letter-spacing:-0.03em;}
+  .pagesub{font-size:14px;color:var(--text-2);margin-top:6px;max-width:640px;}
+  .paramline{display:inline-flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;
+    color:var(--text-3);margin-top:14px;border:1px solid var(--line);border-radius:var(--r-s);padding:8px 12px;}
+  .paramline b{color:var(--text-2);font-weight:400;}
+
+  /* ===== unified card system =====
+     border:   --line-2 default / --line-3 on hover
+     radius:   --r-m
+     hover:    border lift + surface-2 wash, .2s ease  */
+  .card{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-m);}
+  .row-card{padding:17px 19px;display:flex;align-items:center;gap:18px;margin-bottom:9px;
+    flex-wrap:wrap;transition:border-color .2s var(--ease),background .2s var(--ease);}
+  .row-card.clk{cursor:pointer;}
+  .row-card.clk:hover{border-color:var(--line-3);background:var(--surface-2);}
+  .row-card .main{flex:1;min-width:180px;}
+  .row-card .cat{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    letter-spacing:0.05em;text-transform:uppercase;}
+  .row-card .mkt{font-size:14.5px;font-weight:600;margin:6px 0 10px;letter-spacing:-0.01em;}
+  .row-card .sub{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
+  .chip{font-family:var(--mono);font-size:10px;color:var(--text-2);background:transparent;
+    border:1px solid var(--line-2);border-radius:var(--r-s);padding:3px 7px;
+    letter-spacing:0.04em;text-transform:uppercase;}
+  .row-card .endcol{text-align:right;min-width:122px;}
+  .endcol .el{font-size:9.5px;color:var(--text-3);font-family:var(--mono);
+    letter-spacing:0.07em;text-transform:uppercase;}
+  .endcol .ev{font-size:19px;font-weight:600;margin-top:4px;letter-spacing:-0.01em;
+    font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  .endcol .eu{font-size:9.5px;color:var(--text-3);font-family:var(--mono);letter-spacing:0.04em;}
+
+  .badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;
+    padding:3px 7px;border-radius:2px;border:1px solid var(--line-2);color:var(--text-2);
+    letter-spacing:0.04em;text-transform:uppercase;}
+  .badge .d{width:5px;height:5px;border-radius:1px;background:currentColor;}
+  .badge.b-sig{color:var(--signal-2);border-color:rgba(85,119,255,0.38);background:var(--signal-soft);}
+  .badge.b-good{color:var(--good);border-color:rgba(63,176,121,0.36);background:var(--good-soft);}
+
+  .grid2{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;align-items:start;}
+  .panel{padding:24px;}
+  .panel h4{font-family:var(--mono);font-size:11px;color:var(--text-3);letter-spacing:0.07em;
+    text-transform:uppercase;margin-bottom:20px;display:flex;align-items:center;gap:10px;}
+  .panel h4::before{content:"";width:11px;height:11px;flex:none;border-radius:2px;
+    border:1px solid var(--line-3);
+    background:linear-gradient(var(--signal),var(--signal)) no-repeat 2px 2px;
+    background-size:3.4px 3.4px;}
+  .panel h4::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  .paycover{display:flex;align-items:stretch;gap:0;border:1px solid var(--line-2);
+    border-radius:var(--r-m);overflow:hidden;margin-bottom:18px;background:var(--surface);}
+  .pc-cell{flex:1;padding:16px 18px;}
+  .pc-cell.pc-cover{background:var(--signal-soft);border-left:1px solid var(--line-2);}
+  .pc-l{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    letter-spacing:0.06em;text-transform:uppercase;}
+  .pc-v{font-size:24px;font-weight:600;letter-spacing:-0.01em;margin-top:8px;
+    display:flex;align-items:baseline;gap:5px;
+    font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  .pc-cover .pc-v{color:var(--signal-2);}
+  .pc-u{font-size:11px;font-weight:400;color:var(--text-3);font-family:var(--mono);}
+  .pc-arrow{display:flex;align-items:center;color:var(--text-3);padding:0 2px;flex:none;}
+
+  .terms{width:100%;border-collapse:collapse;}
+  .terms tr{border-top:1px solid var(--line);}
+  .terms tr:first-child{border-top:none;}
+  .terms td{padding:11px 0;font-size:13.5px;vertical-align:top;}
+  .terms td:first-child{color:var(--text-2);font-family:var(--mono);font-size:12px;
+    letter-spacing:0.02em;}
+  .terms td:last-child{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  .terms td .big{font-size:15px;color:var(--text);font-weight:600;}
+  .terms .hint{color:var(--text-3);font-size:11px;}
+
+  .notebox{border-radius:var(--r-s);padding:12px 14px;font-size:12.5px;color:var(--text-2);
+    background:var(--surface-2);border:1px solid var(--line);margin-top:14px;line-height:1.55;}
+  .notebox.on{border-color:rgba(85,119,255,0.4);background:var(--signal-soft);}
+
+  .checklist{list-style:none;}
+  .checklist li{font-size:13px;color:var(--text-2);padding:7px 0 7px 24px;position:relative;}
+  .checklist li::before{content:"";position:absolute;left:0;top:12px;width:9px;height:9px;
+    border:1.5px solid var(--text-3);border-radius:2px;}
+  .checklist li::after{content:"";position:absolute;left:3px;top:14px;width:4px;height:7px;
+    border:solid var(--signal);border-width:0 1.5px 1.5px 0;transform:rotate(42deg);}
+
+  .cert{border:1px solid var(--line-2);border-radius:var(--r-m);overflow:hidden;
+    background:var(--surface);}
+  .cert-top{padding:20px 22px;border-bottom:1px solid var(--line);display:flex;
+    justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;
+    background:repeating-linear-gradient(135deg,transparent,transparent 9px,var(--hairtex) 9px,var(--hairtex) 10px);}
+  .cert-top .pidl{font-family:var(--mono);font-size:11px;color:var(--text-3);}
+  .cert-top .pid{font-family:var(--mono);font-size:19px;letter-spacing:-0.01em;margin-top:2px;}
+  .cert-body{padding:4px 22px 18px;}
+
+  .progress{height:7px;background:var(--surface-3);border-radius:0;overflow:hidden;
+    border:1px solid var(--line);}
+  .progress .fill{height:100%;background:var(--signal);
+    transition:width .5s var(--ease);}
+  .progress.g .fill{background:var(--good);}
+  .relrow{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin:16px 0;
+    border:1px solid var(--line-2);border-radius:var(--r-m);overflow:hidden;}
+  .relrow .c{background:var(--surface);border-right:1px solid var(--line);padding:13px 14px;}
+  .relrow .c:last-child{border-right:none;}
+  .relrow .c .l{font-size:10px;color:var(--text-3);font-family:var(--mono);
+    letter-spacing:0.06em;text-transform:uppercase;}
+  .relrow .c .v{font-size:18px;font-weight:600;margin-top:6px;letter-spacing:-0.01em;
+    font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  .relrow .c.acc{background:var(--signal-soft);}
+  .relrow .c.acc .v{color:var(--signal-2);}
+  .curve{width:100%;height:auto;display:block;}
+  .axis{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;
+    color:var(--text-3);margin-top:7px;letter-spacing:0.03em;}
+
+  .timeline{position:relative;}
+  .tl{display:flex;gap:13px;padding-bottom:20px;position:relative;}
+  .tl:last-child{padding-bottom:0;}
+  .tl::before{content:"";position:absolute;left:5.5px;top:15px;bottom:-3px;width:1.5px;background:var(--line-2);}
+  .tl:last-child::before{display:none;}
+  .tl .dot{width:12px;height:12px;border-radius:1px;border:2px solid var(--text-3);
+    background:var(--ink);flex:none;margin-top:2px;z-index:1;}
+  .tl.done .dot{background:var(--text-3);border-color:var(--text-3);}
+  .tl.now .dot{border-color:var(--signal);background:var(--signal);box-shadow:0 0 0 3px var(--signal-soft);}
+  .tl.now.g .dot{border-color:var(--good);background:var(--good);box-shadow:0 0 0 3px var(--good-soft);}
+  .tl .tt{font-size:14px;font-weight:500;}
+  .tl .td{font-size:11.5px;color:var(--text-3);font-family:var(--mono);margin-top:2px;letter-spacing:0.02em;}
+  .tl.future .tt{color:var(--text-3);}
+
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  .stat{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-m);
+    padding:20px;transition:border-color .2s var(--ease),background .2s var(--ease);}
+  .stat:hover{border-color:var(--line-3);background:var(--surface-2);}
+  .stat .l{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    letter-spacing:0.06em;text-transform:uppercase;}
+  .stat .v{font-size:25px;font-weight:600;margin-top:11px;letter-spacing:-0.01em;
+    font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  .stat .v .u{font-size:11px;color:var(--text-3);font-family:var(--mono);font-weight:400;}
+
+  .table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  .table th{text-align:left;font-family:var(--mono);font-size:11px;color:var(--text-3);
+    font-weight:400;padding:10px 12px;border-bottom:1px solid var(--line);letter-spacing:0.03em;}
+  .table td{padding:13px 12px;border-bottom:1px solid var(--line);}
+  .table tr:last-child td{border-bottom:none;}
+  .table tbody tr.clk{cursor:pointer;transition:background .14s;}
+  .table tbody tr.clk:hover{background:var(--surface-2);}
+
+  .ov-lbl{font-family:var(--mono);font-size:11px;color:var(--text-3);letter-spacing:0.09em;
+    text-transform:uppercase;margin-bottom:13px;display:flex;align-items:center;gap:12px;}
+  .ov-lbl::after{content:"";flex:1;height:1px;background:var(--line-2);}
+
+  .empty{text-align:center;padding:54px 20px;}
+  .empty svg{width:34px;height:34px;color:var(--text-3);margin-bottom:14px;}
+  .empty .et{font-size:15px;font-weight:500;}
+  .empty .ed{font-size:13px;color:var(--text-3);margin-top:5px;}
+
+  .mini-prog{display:flex;align-items:center;gap:9px;margin-top:8px;}
+  .mini-prog .pb{flex:1;height:4px;background:var(--surface-3);border-radius:2px;overflow:hidden;max-width:140px;}
+  .mini-prog .pb i{display:block;height:100%;background:var(--signal);border-radius:2px;}
+  .mini-prog .pt{font-family:var(--mono);font-size:11px;color:var(--text-3);}
+
+  /* ===== portfolio: institutional terminal style ===== */
+  .pf-hero{border:1px solid var(--line-2);border-radius:3px;background:var(--surface);overflow:hidden;}
+  .pf-hero-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;}
+  .pf-hcell{padding:15px 18px;border-right:1px solid var(--line);position:relative;}
+  .pf-hcell:last-child{border-right:none;}
+  .pf-hcell.lead{background:var(--surface-2);}
+  .pf-hcell.lead::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--text-2);}
+  .pf-hcell.is-claim::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--signal);}
+  .pf-k{font-family:var(--mono);font-size:10.5px;color:var(--text-3);letter-spacing:0.07em;
+    text-transform:uppercase;}
+  .pf-num{font-family:var(--mono);font-size:25px;font-weight:600;letter-spacing:-0.01em;
+    margin-top:10px;line-height:1;font-variant-numeric:tabular-nums;}
+  .pf-hcell.lead .pf-num{font-size:29px;}
+  .pf-num.sig{color:var(--signal-2);}
+  .pf-num .u{font-size:11px;font-weight:400;color:var(--text-3);margin-left:5px;}
+  .pf-sub{font-family:var(--mono);font-size:10.5px;color:var(--text-3);margin-top:8px;
+    letter-spacing:0.02em;font-variant-numeric:tabular-nums;text-transform:uppercase;}
+  .pf-rel{display:flex;align-items:center;gap:14px;padding:12px 18px;
+    border-top:1px solid var(--line-2);flex-wrap:wrap;background:var(--surface-2);}
+  .pf-rel-meta{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    letter-spacing:0.07em;text-transform:uppercase;flex:none;}
+  .pf-rel-bar{flex:1;min-width:160px;height:6px;border-radius:0;
+    background:var(--surface-3);overflow:hidden;position:relative;
+    border:1px solid var(--line);}
+  .pf-rel-bar i{position:absolute;left:0;top:0;bottom:0;background:var(--signal);}
+  .pf-rel-fig{font-family:var(--mono);font-size:11.5px;color:var(--text-2);
+    font-variant-numeric:tabular-nums;flex:none;}
+  .pf-rel-fig b{color:var(--text);font-weight:600;}
+  .pf-rel-pct{font-family:var(--mono);font-size:11.5px;color:var(--signal-2);font-weight:600;
+    font-variant-numeric:tabular-nums;flex:none;}
+  .pf-rel .btn{border-radius:2px;}
+
+  /* ledger rows — terminal grid */
+  .pf-grouphdr{display:flex;align-items:center;gap:10px;margin:22px 0 0;
+    padding:7px 12px;background:var(--surface-2);border:1px solid var(--line-2);
+    border-bottom:none;border-radius:3px 3px 0 0;}
+  .pf-grouphdr .gh-t{font-family:var(--mono);font-size:11px;font-weight:600;
+    letter-spacing:0.05em;text-transform:uppercase;}
+  .pf-grouphdr .gh-c{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    border:1px solid var(--line-2);border-radius:2px;padding:0 6px;}
+  .pf-grouphdr .gh-line{flex:1;}
+  .pf-grouphdr .gh-sum{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    letter-spacing:0.03em;font-variant-numeric:tabular-nums;}
+  .pledger{border:1px solid var(--line-2);border-radius:0 0 3px 3px;overflow:hidden;
+    background:var(--surface);}
+  .prow{display:grid;grid-template-columns:1fr auto;gap:12px 18px;
+    padding:13px 16px 13px 18px;border-bottom:1px solid var(--line);cursor:pointer;
+    transition:background .12s;align-items:center;position:relative;}
+  .prow::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:transparent;}
+  .prow.s-paying::before{background:var(--signal);}
+  .prow.s-paid::before{background:var(--good);}
+  .prow.s-covered::before{background:var(--text-3);}
+  .prow.s-nopay::before{background:var(--line-3);}
+  .prow:last-child{border-bottom:none;}
+  .prow:hover{background:var(--surface-2);}
+  .prow-main{min-width:0;}
+  .prow-top{display:flex;align-items:center;gap:9px;}
+  .prow-id{font-family:var(--mono);font-size:10.5px;color:var(--text-3);letter-spacing:0.04em;}
+  .prow-mkt{font-size:13.5px;font-weight:500;letter-spacing:-0.005em;margin-top:4px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .prow-meta{display:flex;align-items:center;gap:6px;margin-top:7px;flex-wrap:wrap;}
+  .prow-fig{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .prow-fig .fk{font-family:var(--mono);font-size:9.5px;color:var(--text-3);
+    letter-spacing:0.07em;text-transform:uppercase;}
+  .prow-fig .fv{font-family:var(--mono);font-size:16px;font-weight:600;
+    letter-spacing:-0.01em;margin-top:3px;}
+  .prow-fig .fv.sig{color:var(--signal-2);}
+  .prow-fig .fu{font-family:var(--mono);font-size:9.5px;color:var(--text-3);margin-left:3px;font-weight:400;}
+  .prow-bar{grid-column:1/-1;display:flex;align-items:center;gap:10px;}
+  .prow-bar .pbar{flex:1;height:5px;border-radius:0;background:var(--surface-3);
+    overflow:hidden;border:1px solid var(--line);}
+  .prow-bar .pbar i{display:block;height:100%;background:var(--signal);}
+  .prow-bar .pbt{font-family:var(--mono);font-size:10px;color:var(--text-3);
+    letter-spacing:0.03em;font-variant-numeric:tabular-nums;flex:none;}
+  .tag{font-family:var(--mono);font-size:10px;letter-spacing:0.04em;text-transform:uppercase;
+    padding:2px 6px;border-radius:2px;border:1px solid var(--line-2);color:var(--text-2);}
+  .prow .badge,.pf-hero .badge{border-radius:2px;}
+  .prow .badge .d{border-radius:1px;}
+
+  /* gated / locked preview */
+  .gate{position:relative;}
+  .gate-blur{filter:blur(7px) saturate(0.7);opacity:.5;pointer-events:none;user-select:none;}
+  .gate-veil{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;
+    padding-top:96px;}
+  .gate-card{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-l);
+    padding:30px 30px 26px;max-width:404px;width:100%;text-align:center;
+    box-shadow:0 24px 70px rgba(0,0,0,.4);animation:pop .34s var(--ease);}
+  .gate-card .gi{width:46px;height:46px;border:1px solid var(--line-2);border-radius:2px;
+    display:flex;align-items:center;justify-content:center;color:var(--signal);margin:0 auto 16px;}
+  .gate-card h3{font-size:18px;font-weight:600;letter-spacing:-0.02em;}
+  .gate-card p{font-size:13.5px;color:var(--text-2);margin:7px 0 18px;}
+
+  .overlay{position:fixed;inset:0;background:var(--overlay-bg);backdrop-filter:blur(5px);
+    z-index:90;display:flex;align-items:center;justify-content:center;padding:24px;animation:fade .18s var(--ease);}
+  @keyframes fade{from{opacity:0;}to{opacity:1;}}
+  .modal{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-l);
+    max-width:412px;width:100%;animation:pop .24s var(--ease);}
+  @keyframes pop{from{opacity:0;transform:translateY(14px) scale(.97);}to{opacity:1;transform:none;}}
+  .modal-h{padding:20px 22px 0;}
+  .modal-h h3{font-size:17px;font-weight:600;letter-spacing:-0.01em;}
+  .modal-h p{font-size:13px;color:var(--text-2);margin-top:4px;}
+  .modal-b{padding:16px 22px 22px;}
+  .wallet-opt{display:flex;align-items:center;gap:13px;width:100%;text-align:left;
+    border:1px solid var(--line-2);border-radius:var(--r-m);padding:14px;margin-top:9px;
+    transition:border-color .15s,background .15s,transform .12s var(--ease);}
+  .wallet-opt:hover{border-color:var(--line-3);background:var(--surface-2);}
+  .wallet-opt:active{transform:scale(.99);}
+  .wallet-opt .ic{width:34px;height:34px;border-radius:2px;flex:none;display:flex;
+    align-items:center;justify-content:center;font-weight:600;font-size:15px;color:#fff;}
+  .wallet-opt .wn{font-size:14px;font-weight:500;}
+  .wallet-opt .wd{font-size:11px;color:var(--text-3);font-family:var(--mono);letter-spacing:0.02em;}
+  .wallet-opt .arr{margin-left:auto;color:var(--text-3);}
+  .spinner{width:32px;height:32px;border:2.5px solid var(--line-2);border-top-color:var(--signal);
+    border-radius:50%;animation:spin .8s linear infinite;margin:8px auto 16px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .spinner-sm{width:13px;height:13px;border:2px solid var(--line-2);border-top-color:var(--signal);
+    border-radius:50%;animation:spin .7s linear infinite;display:block;}
+  .modal-status{padding:26px 22px;text-align:center;}
+  .txsteps{display:flex;flex-direction:column;gap:2px;}
+  .txs-row{display:flex;align-items:center;gap:11px;padding:9px 0;}
+  .txs-ic{width:20px;height:20px;border-radius:2px;border:1px solid var(--line-2);
+    display:flex;align-items:center;justify-content:center;flex:none;
+    font-size:11px;color:var(--text-3);}
+  .txs-ic.ok{background:var(--good);border-color:var(--good);color:#fff;}
+  .txs-ic.wait{opacity:.5;}
+  .txs-l{font-size:13px;color:var(--text-2);font-family:var(--mono);letter-spacing:0.02em;}
+  .txs-row.done .txs-l{color:var(--text);}
+  .txs-row.now .txs-l{color:var(--text);}
+  .txs-row.wait .txs-l{color:var(--text-3);}
+  .errbox{border:1px solid rgba(224,86,79,0.4);background:var(--bad-soft);
+    border-radius:2px;padding:12px 14px;font-size:13px;color:var(--text-2);line-height:1.55;}
+
+  @keyframes rise{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:none;}}
+  .rise{animation:rise .5s var(--ease) both;}
+  .rise-2{animation:rise .5s var(--ease) .06s both;}
+  .rise-3{animation:rise .5s var(--ease) .12s both;}
+
+  /* scroll-reveal — sections fade up as they enter the viewport */
+  .reveal{opacity:0;transform:translateY(22px);
+    transition:opacity .66s var(--ease),transform .66s var(--ease);}
+  .reveal.seen{opacity:1;transform:none;}
+  /* staggered children within a revealed section */
+  .reveal .stagger{opacity:0;transform:translateY(16px);
+    transition:opacity .55s var(--ease),transform .55s var(--ease);}
+  .reveal.seen .stagger{opacity:1;transform:none;}
+  .reveal.seen .stagger:nth-child(1){transition-delay:.05s;}
+  .reveal.seen .stagger:nth-child(2){transition-delay:.12s;}
+  .reveal.seen .stagger:nth-child(3){transition-delay:.19s;}
+  .reveal.seen .stagger:nth-child(4){transition-delay:.26s;}
+
+  @media(prefers-reduced-motion:reduce){
+    .rise,.rise-2,.rise-3,.skel::after{animation:none;}
+    .reveal{opacity:1;transform:none;transition:none;}
+    .reveal .stagger{opacity:1;transform:none;transition:none;}
+  }
+
+  /* ===== skeleton loading ===== */
+  .skel{background:var(--surface-2);border-radius:2px;position:relative;overflow:hidden;}
+  .skel::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent,var(--hairtex),transparent);
+    transform:translateX(-100%);animation:shimmer 1.3s infinite;}
+  @keyframes shimmer{100%{transform:translateX(100%);}}
+  .skel-row{border:1px solid var(--line-2);border-radius:var(--r-m);padding:17px 19px;
+    margin-bottom:9px;background:var(--surface);
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
+  .skel-row .sk-main{flex:1;min-width:180px;display:flex;flex-direction:column;gap:9px;}
+  .skel-row .sk-end{display:flex;flex-direction:column;gap:7px;align-items:flex-end;
+    min-width:108px;}
+  .skel-line{height:11px;}
+  .skel-grid{display:grid;grid-template-columns:1fr;gap:9px;}
+  /* gated dashboard frame — structure only, no data */
+  .skel-dash{border:1px solid var(--line-2);border-radius:3px;background:var(--surface);
+    overflow:hidden;margin-bottom:28px;}
+  .skel-dash-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;}
+  .skel-dash-cell{padding:18px;border-right:1px solid var(--line);
+    display:flex;flex-direction:column;gap:11px;}
+  .skel-dash-cell:last-child{border-right:none;}
+  .skel-dash-cell.lead{background:var(--surface-2);}
+  .skel-dash-bar{padding:13px 18px;border-top:1px solid var(--line-2);
+    background:var(--surface-2);display:flex;align-items:center;gap:14px;}
+  @media(max-width:680px){
+    .skel-dash-grid{grid-template-columns:1fr 1fr;}
+    .skel-dash-cell:nth-child(2){border-right:none;}
+    .skel-dash-cell:nth-child(1),.skel-dash-cell:nth-child(2){
+      border-bottom:1px solid var(--line);}
+  }
+
+  /* ===== toast variants ===== */
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(24px);
+    z-index:95;background:var(--surface-3);border:1px solid var(--line-2);border-radius:var(--r-m);
+    padding:11px 15px;font-size:13px;font-family:var(--mono);box-shadow:0 12px 40px rgba(0,0,0,.45);
+    opacity:0;transition:.24s var(--ease);display:flex;align-items:center;gap:11px;max-width:380px;}
+  .toast.show{transform:translateX(-50%);opacity:1;}
+  .toast .tdot{width:7px;height:7px;border-radius:1px;background:var(--good);flex:none;}
+  .toast.t-err .tdot{background:var(--bad,#e0564f);}
+  .toast.t-info .tdot{background:var(--signal);}
+  .toast .tbody{min-width:0;}
+  .toast .tmain{color:var(--text);}
+  .toast .tsub{color:var(--text-3);font-size:11px;margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:0.02em;}
+  .toast .tlink{color:var(--signal-2);text-decoration:none;flex:none;font-size:11px;
+    border:1px solid var(--line-2);border-radius:2px;padding:3px 7px;}
+  .toast .tlink:hover{border-color:var(--line-3);}
+
+  /* ===== list controls: sort / filter / search ===== */
+  .listbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .listbar .lb-search{flex:1;min-width:160px;display:flex;align-items:center;gap:8px;
+    border:1px solid var(--line-2);border-radius:2px;padding:0 10px;height:34px;
+    background:var(--surface);}
+  .listbar .lb-search input{flex:1;border:none;background:none;color:var(--text);
+    font-family:var(--mono);font-size:12px;outline:none;min-width:0;}
+  .listbar .lb-search input::placeholder{color:var(--text-3);}
+  .listbar .lb-search svg{color:var(--text-3);flex:none;}
+  .fbtn{font-family:var(--mono);font-size:11px;letter-spacing:0.03em;color:var(--text-2);
+    border:1px solid var(--line-2);border-radius:2px;padding:0 11px;height:34px;
+    background:var(--surface);transition:border-color .14s,background .14s,color .14s;
+    display:inline-flex;align-items:center;gap:6px;text-transform:uppercase;cursor:pointer;}
+  .fbtn:hover{border-color:var(--line-3);color:var(--text);}
+  .fbtn.on{background:var(--signal-soft);border-color:rgba(85,119,255,0.4);color:var(--signal-2);}
+  .fbtn .fb-x{color:var(--text-3);font-size:13px;}
+  .sortsel{font-family:var(--mono);font-size:11px;letter-spacing:0.03em;color:var(--text-2);
+    border:1px solid var(--line-2);border-radius:2px;height:34px;padding:0 9px;
+    background:var(--surface);text-transform:uppercase;cursor:pointer;outline:none;}
+  .listcount{font-family:var(--mono);font-size:11px;color:var(--text-3);
+    letter-spacing:0.04em;margin-left:auto;}
+
+  /* ===== activity feed ===== */
+  .actfeed{border:1px solid var(--line-2);border-radius:var(--r-m);overflow:hidden;background:var(--surface);}
+  .actrow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;
+    padding:11px 16px;border-bottom:1px solid var(--line);}
+  .actrow:last-child{border-bottom:none;}
+  .actrow .aic{width:26px;height:26px;border:1px solid var(--line-2);border-radius:2px;
+    display:flex;align-items:center;justify-content:center;color:var(--text-2);flex:none;}
+  .actrow.a-in .aic{color:var(--good);}
+  .actrow.a-out .aic{color:var(--signal-2);}
+  .actrow .at{font-size:13px;}
+  .actrow .ad{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    margin-top:2px;letter-spacing:0.03em;}
+  .actrow .av{font-family:var(--mono);font-size:13px;font-weight:600;
+    font-variant-numeric:tabular-nums;text-align:right;}
+  .actrow .av.pos{color:var(--good);}
+  .actrow .av.neg{color:var(--text-2);}
+
+  /* ===== empty states ===== */
+  .empty2{border:1px dashed var(--line-2);border-radius:var(--r-m);padding:44px 24px;
+    text-align:center;background:var(--surface);}
+  .empty2 .e-ic{width:44px;height:44px;border:1px solid var(--line-2);border-radius:2px;
+    display:flex;align-items:center;justify-content:center;color:var(--text-3);
+    margin:0 auto 16px;}
+  .empty2 .e-t{font-size:15px;font-weight:600;}
+  .empty2 .e-d{font-size:13px;color:var(--text-3);margin-top:6px;max-width:340px;
+    margin-left:auto;margin-right:auto;line-height:1.55;}
+  .empty2 .btn{margin-top:18px;}
+
+  /* live indicator */
+  .liveupd{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    letter-spacing:0.04em;display:inline-flex;align-items:center;gap:6px;}
+  .liveupd .lu-dot{width:6px;height:6px;border-radius:50%;background:var(--good);
+    animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+
+  /* curve hover tooltip */
+  .ctip{position:absolute;pointer-events:none;background:var(--surface-3);
+    border:1px solid var(--line-2);border-radius:2px;padding:6px 9px;
+    font-family:var(--mono);font-size:10.5px;white-space:nowrap;opacity:0;
+    transition:opacity .12s;z-index:5;}
+  .ctip .ct-d{color:var(--text-3);}
+  .ctip .ct-v{color:var(--text);font-weight:600;margin-top:2px;}
+  .cdot{opacity:0;transition:opacity .12s;}
+
+  @media(max-width:860px){
+    .grid2,.steps{grid-template-columns:1fr;}
+    .flow{grid-template-columns:1fr;gap:14px;}
+    .flow-link{display:none;}
+    .flow.lit .flow-step:nth-child(2)::before{transition-delay:.1s;}
+    .flow.lit .flow-step:nth-child(3)::before{transition-delay:.2s;}
+    .hero-cols{grid-template-columns:1fr;gap:34px;}
+    .hero-in .lede{max-width:none;}
+    .vals{grid-template-columns:1fr 1fr;}
+    .val:nth-child(2){border-right:none;}
+    .val:nth-child(1),.val:nth-child(2){border-bottom:1px solid var(--line);}
+    .stat-grid{grid-template-columns:1fr 1fr;}
+    .pf-hero-grid{grid-template-columns:1fr 1fr;}
+    .pf-hcell:nth-child(2){border-right:none;}
+    .pf-hcell:nth-child(1),.pf-hcell:nth-child(2){border-bottom:1px solid var(--line);}
+    .pf-hcell.lead .pf-num{font-size:27px;}
+  }
+
+  @media(max-width:680px){
+    .wrap{width:100%;padding:0 18px;}
+    main{padding-bottom:0;}
+
+    .burger{display:flex;}
+    .navlinks{display:none;}
+    .seg-desktop,.iconbtn-desktop{display:none;}
+
+    .bar{height:58px;gap:10px;}
+    .addr{padding:9px 12px;}
+
+    .hero{padding:28px 0 42px;}
+    .hero-cols{grid-template-columns:1fr;gap:28px;}
+    .hero-visual{display:none;}
+    .hero-grid-bg{background-size:36px 36px;}
+    h1.h1{font-size:32px;letter-spacing:-0.03em;line-height:1.08;margin:0 0 14px;}
+    .lede{font-size:15.5px;line-height:1.58;}
+    .cta-row{gap:10px;margin-top:22px;}
+    .cta-row .btn{flex:1;min-width:0;padding:14px;}
+    .hv-frame{max-width:none;}
+    .mb-grid{grid-template-columns:1fr 1fr;}
+    .mb-cell{padding:18px 16px 18px 0;}
+    .mb-cell+.mb-cell{padding-left:0;}
+    .mb-cell+.mb-cell::before{display:none;}
+    .mb-cell:nth-child(even){padding-left:18px;}
+    .mb-cell:nth-child(even)::before{content:"";display:block;left:0;}
+    .mb-cell:nth-child(3),.mb-cell:nth-child(4){border-top:1px solid var(--line);}
+    .mb-v{font-size:22px;}
+    .specstrip{grid-template-columns:1fr 1fr;margin-top:28px;}
+    .specstrip .s{padding:16px;border-right:1px solid var(--line);}
+    .specstrip .s:nth-child(even){border-right:none;}
+    .specstrip .s:nth-child(1),.specstrip .s:nth-child(2){border-bottom:1px solid var(--line);}
+    .specstrip .sv{font-size:19px;}
+
+    section.block{padding:44px 0;}
+    .lbl{margin-bottom:22px;}
+    .sectlede{margin-bottom:22px;}
+    .h2{font-size:22px;}
+
+    .pf-hero-grid{grid-template-columns:1fr 1fr;}
+    .pf-hcell{padding:14px 15px;}
+    .pf-hcell:nth-child(odd){border-right:1px solid var(--line);}
+    .pf-hcell:nth-child(even){border-right:none;}
+    .pf-hcell:nth-child(1),.pf-hcell:nth-child(2){border-bottom:1px solid var(--line);}
+    .pf-num{font-size:22px;}
+    .pf-hcell.lead .pf-num{font-size:22px;}
+    .pf-rel{padding:13px 15px;gap:10px;}
+    .pf-rel-bar{min-width:100%;order:3;}
+    .pf-rel-fig,.pf-rel-pct{font-size:11px;}
+    .pf-rel .btn{width:100%;order:4;}
+
+    .prow{grid-template-columns:1fr;gap:12px;padding:14px 15px;}
+    .prow-fig{text-align:left;display:flex;align-items:baseline;gap:8px;
+      padding-top:11px;border-top:1px solid var(--line);}
+    .prow-fig .fk{order:1;}
+    .prow-fig .fv{order:2;font-size:17px;}
+    .prow-mkt{white-space:normal;}
+
+    /* coverage section — compact on mobile to avoid excessive height */
+    .valwrap{grid-template-columns:1fr;gap:12px;}
+    .val-feature{padding:20px 18px;}
+    .vf-tag{margin-bottom:0;}
+    .vf-icon{width:42px;height:42px;margin:16px 0 13px;}
+    .vf-icon svg{width:20px;height:20px;}
+    .vf-h{font-size:18px;margin-bottom:7px;}
+    .vf-p{font-size:13px;max-width:none;line-height:1.55;}
+    .vf-motif{width:150px;height:150px;right:-30px;top:-30px;}
+    /* supporting list → compact 2-line rows, no index column */
+    .val-row{padding:14px 16px;gap:12px;align-items:flex-start;}
+    .vr-icon{width:32px;height:32px;}
+    .vr-icon svg{width:16px;height:16px;}
+    .vr-body{padding-top:0;}
+    .vr-h{font-size:13.5px;margin-bottom:3px;}
+    .vr-p{font-size:12px;line-height:1.5;}
+    .vr-idx{display:none;}
+    .stat-grid{grid-template-columns:1fr 1fr;}
+    .foot-in{padding:40px 0 36px;}
+    .foot-top{flex-direction:column;gap:26px;padding-bottom:26px;}
+    .foot-cols{gap:40px;}
+    .foot-bottom{flex-direction:column;align-items:flex-start;gap:12px;}
+    .foot-mark{width:300px;bottom:-110px;}
+    .block.motif-bg::before{width:220px;height:220px;right:-70px;top:-70px;}
+
+    .row-card{padding:16px;gap:0;flex-direction:column;align-items:stretch;margin-bottom:10px;}
+    .row-card .main{min-width:0;width:100%;}
+    .row-card .cat{font-size:10.5px;}
+    .row-card .mkt{font-size:15px;margin:5px 0 10px;line-height:1.35;}
+    .row-card .sub{gap:6px;}
+    .row-card .endcol{text-align:left;min-width:0;width:100%;
+      display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+      margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
+    .row-card .endcol .el{order:1;font-size:11.5px;}
+    .row-card .endcol .ev{order:2;font-size:18px;}
+    .row-card .endcol .eu{order:3;font-size:11.5px;}
+    .row-card .btn{width:100%;min-height:46px;margin-top:13px;}
+    .row-card .btn-ghost{order:5;}
+
+    .btn{min-height:46px;}
+    .btn-sm{min-height:44px;padding:11px 14px;}
+    .q{padding:18px 14px;font-size:14px;}
+
+    .page{padding-top:28px;padding-bottom:72px;}
+    .page-head{margin-bottom:22px;}
+    .pagetitle{font-size:22px;}
+    .pagesub{font-size:13.5px;}
+    .paramline{width:100%;}
+
+    .panel{padding:18px;}
+    .cert-top,.cert-body{padding-left:18px;padding-right:18px;}
+    .relrow{grid-template-columns:1fr;}
+    .terms td{font-size:13.5px;}
+
+    .market-card{flex-wrap:wrap;gap:14px;padding:18px;}
+    .market-body{flex-basis:calc(100% - 66px);}
+    .market-status{order:3;}
+
+    .overlay{align-items:flex-end;padding:0;}
+    .modal{max-width:none;border-radius:var(--r-l) var(--r-l) 0 0;
+      border-left:none;border-right:none;border-bottom:none;
+      padding-bottom:env(safe-area-inset-bottom,0);
+      animation:sheet .3s var(--ease);}
+    .modal::before{content:"";display:block;width:36px;height:4px;border-radius:2px;
+      background:var(--line-3);margin:10px auto 2px;}
+    .wallet-opt{padding:15px;}
+    .wallet-opt .ic{width:38px;height:38px;}
+
+    .toast{bottom:calc(env(safe-area-inset-bottom,0) + 18px);
+      width:calc(100% - 40px);justify-content:center;}
+
+    .gate-veil{padding-top:42px;}
+    .gate-card{padding:26px 22px 24px;}
+    .drawer-panel{width:min(86vw,340px);}
+  }
+
+  @keyframes sheet{from{opacity:0;transform:translateY(100%);}to{opacity:1;transform:none;}}
+
+  @media(max-width:430px){
+    .stat-grid{grid-template-columns:1fr;}
+    .brand .p{display:none;}
+    .pf-hero-grid{grid-template-columns:1fr;}
+    .pf-hcell{border-right:none !important;}
+    .pf-hcell:not(:last-child){border-bottom:1px solid var(--line);}
+  }
+
+  @media(min-width:681px){
+    .drawer{display:none !important;}
+  }
+
+  .order-grid{display:grid;grid-template-columns:1fr;gap:8px;}
+  .order-grid .row-card{margin-bottom:0;}
+
+  @media(min-width:1180px){
+    .order-grid{grid-template-columns:1fr 1fr;gap:10px;}
+    .pledger{display:grid;grid-template-columns:1fr 1fr;}
+    .pledger .prow{border-right:1px solid var(--line);}
+    .pledger .prow:nth-child(even){border-right:none;}
+    .pledger .prow:nth-last-child(2):nth-child(odd){border-bottom:none;}
+  }
+  @media(min-width:1680px){
+    .order-grid{grid-template-columns:1fr 1fr 1fr;}
+    .pledger{grid-template-columns:1fr 1fr 1fr;}
+    .pledger .prow:nth-child(even){border-right:1px solid var(--line);}
+    .pledger .prow:nth-child(3n){border-right:none;}
+    .pledger .prow:nth-last-child(2):nth-child(odd){border-bottom:1px solid var(--line);}
+  }
+</style>
+</head>
+<body>
+<script>
+  (function(){
+    try{
+      var dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.body.setAttribute('data-theme',dark?'dark':'light');
+    }catch(e){document.body.setAttribute('data-theme','dark');}
+  })();
+</script>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="mk" viewBox="0 0 100 100">
+  <rect x="14" y="14" width="72" height="72" rx="16" fill="none" stroke="currentColor" stroke-width="8"/>
+  <rect x="26" y="26" width="28" height="28" rx="7" fill="currentColor"/>
+</symbol>
+<symbol id="signa" viewBox="0 0 100 100">
+  <g fill="none" stroke="currentColor" stroke-width="8.6" stroke-linecap="round">
+    <path d="M36.3 87.6 A40 40 0 1 1 84.6 70"/>
+    <path d="M41.1 74.4 A26 26 0 1 1 72.5 63"/>
+    <path d="M45.6 62.2 A13 13 0 1 1 61.3 56.5"/>
+  </g>
+  <circle cx="50" cy="50" r="6" fill="currentColor"/>
+</symbol>
+</defs></svg>
+
+<header class="site">
+  <div class="bar wrap">
+    <button class="burger" data-act="drawer" aria-label="Menu"><span></span></button>
+    <a class="brand" data-act="nav" data-view="home">
+      <svg viewBox="0 0 100 100"><use href="#mk"/></svg>
+      <span class="txt">CoverFi <span class="p">Protocol</span></span>
+    </a>
+    <nav id="nav-desktop" class="navlinks"></nav>
+    <div class="grow"></div>
+    <div id="nav-right"></div>
+  </div>
+</header>
+
+<div class="drawer" id="drawer" data-act="drawer-close"><div class="drawer-panel" id="drawer-panel" data-stop></div></div>
+<main><div id="view"></div></main>
+<div id="layer"></div>
+<div class="toast" id="toast">
+  <span class="tdot"></span>
+  <span class="tbody"><span class="tmain" id="toast-msg"></span><span class="tsub" id="toast-sub"></span></span>
+  <a class="tlink" id="toast-link" target="_blank" rel="noopener">tx ↗</a>
+</div>
+
+<script>
+/* ============ i18n ============ */
+const T={
+ en:{
+  navHome:'Home', navInsure:'Insurance', navPortfolio:'My Policies',
+  connect:'Connect wallet', disconnect:'Disconnect wallet', menu:'Menu',
+  poweredBy:'Supported market',
+  metricEyebrow:'By the protocol',
+  m1v:'100%', m1l:'principal returned on a miss',
+  m2v:'365d', m2l:'linear release schedule',
+  m3v:'1,284', m3l:'claims settled to date',
+  m4v:'$3.9M', m4l:'principal reimbursed in total',
+  heroEyebrow:'Onchain principal insurance · v1',
+  hvBarTitle:'Coverage engine',
+  hvCardMkt:'BTC hashrate hits a new all-time high',
+  hvFootLeft:'365-day linear', hvFootRight:'Onchain policy',
+  whatCoverageH:'Coverage that behaves predictably.',
+  whatCoverageLede:'Four guarantees written into the contract — not the marketing copy.',
+  marketsH:'One integration. Live today.',
+  heroTitle:'Cap the downside on any prediction.',
+  heroLede:'CoverFi insures your Signa orders. If a position settles as a miss, 100% of your principal is returned — released linearly over the cover period. Premiums and payouts run onchain, settled against the market oracle.',
+  howItWorks:'How it works', coverage:'Coverage', faq:'FAQ',
+  s1:'100%', s1l:'principal coverage', s2:'365-day', s2l:'linear release',
+  s3:'Onchain', s3l:'priced & settled by code', s4:'non-transferable', s4l:'onchain policy',
+  threeSteps:'Three steps.', stepsLede:'Coverage sits next to the market. It never changes how you trade on Signa.',
+  st1t:'Open a position on Signa', st1d:'Take a prediction-market position the usual way — CoverFi never touches your trade.',
+  st2t:'Insure the order here', st2d:'Connect the same wallet and pay one premium. A non-transferable policy is minted onchain.',
+  st3t:'Recover principal on a miss', st3d:'If the position misses, 100% of principal releases linearly over 365 days. Claim anytime.',
+  st1m:'No integration needed', st2m:'One onchain transaction', st3m:'Claimable continuously',
+  whatCoverage:'what coverage gives you',
+  supportedMarkets:'supported prediction markets',
+  signaDesc:'CoverFi reads your orders directly from Signa. Connect the same wallet to insure any eligible position.',
+  liveIntegration:'Live integration',
+  moreMarkets:'Additional prediction markets will be supported in future versions.',
+  v1t:'100% principal coverage', v1d:'A miss returns your full principal, not a fraction of it. The single guarantee everything else is built around.',
+  vfTag:'Core guarantee',
+  v2t:'Onchain insurance contract', v2d:'Every policy is a non-transferable contract minted to your wallet.',
+  v3t:'Onchain premiums & payouts', v3d:'Premiums and payouts execute onchain by fixed rules. Settlement reads the outcome from the market oracle.',
+  v4t:'Plain terms', v4d:'One premium, kept whether the position wins or loses. Stated up front.',
+  commonQ:'Common questions.',
+  faqs:[
+   ['How is the premium calculated?','The premium reflects how likely the market considers your position to miss — the more uncertain the outcome, the higher the premium. A floor of 5% of your principal always applies, so you pay whichever is greater.'],
+   ['When does coverage pay out?','Coverage triggers only when your insured option settles as a miss. Settlement is read from the market\u2019s oracle. If the option wins, the policy closes and the premium is kept.'],
+   ['How do I receive my principal?','After settlement, 100% of your principal releases linearly over 365 days. Claim the released amount anytime; unclaimed amounts accumulate.'],
+   ['What happens if a market is voided?','If a market is voided or resolves with no definitive result, coverage does not trigger. The policy is cancelled and the premium is refunded.'],
+   ['Can I transfer or sell a policy?','No. In v1 the onchain insurance contract is non-transferable — it stays bound to the wallet that bought it. This keeps a policy tied to the real position it protects and prevents a secondary market in coverage. Transferable policies may be considered in a later version.']
+  ],
+  footTagline:'The coverage layer for onchain prediction markets',
+  footColProduct:'Product', footColResource:'Resources',
+  footL1:'Insurable orders', footL2:'My policies', footL3:'How it works',
+  footL4:'Documentation', footL5:'Contract & audit', footL6:'FAQ',
+  footMeta:'CoverFi Protocol · v1.0 · simulated prototype',
+  footStatus:'All systems operational',
+  insureTitle:'Insurable orders',
+  insureSub:'Orders on Signa for this wallet that are eligible for coverage — the market is whitelisted, still open, and not yet insured.',
+  pq:'q', pfloor:'premium floor', pperiod:'cover period', linear:'linear',
+  estPremium:'est. premium', insure:'Insure', floor:'floor',
+  emptyOrdersT:'No insurable orders', emptyOrdersD:'Open a position on Signa, then return to insure it.',
+  reviewCrumb:'review', reviewTitle:'Review & confirm',
+  orderCoverage:'order & coverage', insuredOption:'Insured option', principal:'Principal',
+  youPay:'you pay', youreCovered:'you\u2019re covered for',
+  impliedProb:'Implied probability', basePremium:'Base premium', premiumFloor:'Premium floor',
+  premiumPayable:'Premium payable', coverageAmount:'Coverage amount', coverPeriod:'Cover period',
+  floorOn:(b,f)=>`Floor applied. The base premium (${b} USDC) is below the 5% minimum, so the premium payable is the floor — ${f} USDC.`,
+  floorOff:f=>`Premium payable is the greater of the base premium and the 5% minimum (${f} USDC).`,
+  terms:'terms',
+  t1:'Premium is paid once and is not refunded if the option wins.',
+  t2:'The premium and coverage amount are locked in at purchase. Later market moves do not change this policy.',
+  t3:'On a miss, principal releases linearly over 365 days from settlement.',
+  t4:'If the market is voided, coverage does not trigger and the premium is refunded.',
+  t5:'The policy is a non-transferable onchain contract.',
+  walletBalance:'Wallet balance', premium:'Premium', payPremium:'Pay premium',
+  pfTitle:'My Policies',
+  pfSub:'Your overall coverage at a glance, followed by every policy minted to this wallet, grouped by lifecycle stage.',
+  ovTitle:'Coverage overview',
+  totalPrincipal:'total insured principal', claimedPayout:'payout claimed', unclaimedPayout:'payout to claim',
+  claimableNow:'claimable now', recoveredToDate:'principal recovered to date', underCover:'principal in payout',
+  acrossN:n=>`${n} ${n===1?'policy':'policies'}`,
+  activeN:n=>`${n} active`,
+  acrossPolicies:n=>`${n} ${n===1?'policy':'policies'}`,
+  releasedLc:'released',
+  claimAll:'Claim all',
+  gPaying:'Paying out', gPaid:'Reimbursed in full',
+  gCovered:'Coverage active', gNopay:'No payout',
+  claimable:'claimable', recovered:'recovered', coverageCol:'coverage',
+  premiumKept:'premium kept', released:'released', open:'Open',
+  contractTitle:'Insurance contract', linkedOrder:'Linked Signa order', market:'Market',
+  premiumPaid:'Premium paid',
+  transferability:'Transferability', nonTransferable:'non-transferable',
+  principalRelease:'principal release', settlementDay0:'settlement · day 0', day365:'day 365',
+  claimed:'claimed', claimableNowCol:'claimable now', ofReleased:(a,b,p)=>`${a} of ${b} USDC released · ${p}%`,
+  fullReimbursed:'This policy has fully reimbursed your principal. Nothing further to claim.',
+  claimBtn:a=>`Claim ${a} USDC`, nothingClaim:'Nothing to claim yet',
+  statusH:'status',
+  stActive:a=>`Coverage is active. If the insured option settles as a miss, ${a} USDC of principal begins releasing linearly over 365 days. Nothing to claim until settlement.`,
+  stHit:p=>`The insured option won, so coverage did not trigger. The policy is closed and the premium of ${p} USDC was kept — the cost of the hedge.`,
+  stVoid:p=>`The market was voided with no definitive result. Coverage did not trigger. The policy is closed and the premium of ${p} USDC was kept.`,
+  timeline:'status timeline',
+  tlMinted:'Policy minted', tlInsured:v=>`premium ${v} USDC`,
+  tlAwait:'Awaiting market settlement', tlMintedAgo:d=>`minted ${d}d ago`, tlSettlement:'Settlement', tlPending:'pending',
+  tlWon:'Settled · option won', tlAgo:d=>`${d}d ago`, tlClosed:'Policy closed', tlPremKept:'premium kept · no payout',
+  tlVoided:'Market voided', tlRefunded:'Policy closed', tlReturned:p=>`premium kept · no payout`,
+  tlMissed:'Settled · option missed', tlReimbursed:'Reimbursed in full', tlReleasing:'Releasing principal',
+  tlDaysFull:'365 / 365 days', tlDays:d=>`${d} / 365 days`, tlRelDone:'Release complete',
+  stsActive:'Coverage active', stsReleasing:'Paying out', stsCompleted:'Reimbursed', stsHit:'Option won', stsVoid:'Market voided',
+  walletModalT:'Connect a wallet', walletModalP:'Use the same wallet you trade with on Signa. Simulated — no real connection is made.',
+  extension:'Browser extension', scanMobile:'Scan with mobile',
+  minting:'Minting policy', mintingSub:'Paying premium and minting your insurance contract.',
+  claimingT:'Processing claim', claimingSub:'Transferring released principal to your wallet.',
+  batchT:'Processing batch claim', batchSub:'Settling all releasing policies in one transaction.',
+  connected:n=>`${n} connected`, disconnected:'Wallet disconnected',
+  minted:id=>`Policy ${id} minted`, claimedToast:a=>`Claimed ${a} USDC`, claimedBatch:a=>`Claimed ${a} USDC`,
+  cwTitle:n=>`Connecting ${n}`, approveConn:'Approve the connection request in your wallet.',
+  batchDone:n=>`${n} policies settled`,
+  errInsufTitle:'Insufficient balance',
+  errInsufMsg:(need,have)=>`This policy requires ${need} USDC in premium, but your wallet holds ${have} USDC. Add funds and try again.`,
+  dismiss:'Dismiss',
+  searchPh:'Search market or ID',
+  sortPremiumHi:'Premium ↓', sortPremiumLo:'Premium ↑', sortPrincipalHi:'Principal ↓',
+  sortClosesSoon:'Closing soon',
+  filterAll:'All',
+  noMatch:'No matching results', noMatchD:'Try a different search term or clear the filters.',
+  clearFilters:'Clear filters', resultCount:n=>`${n} ${n===1?'result':'results'}`,
+  activityTitle:'Recent activity',
+  actMint:'Premium paid', actClaim:'Payout claimed', actVoid:'Market voided',
+  daysAgoShort:n=>n===0?'just now':`${n}d ago`,
+  liveUpdated:s=>`updated ${s}s ago`,
+  emptyPoliciesT:'No policies yet', emptyPoliciesD:'Insure a Signa position to mint your first coverage policy.',
+  emptyPoliciesBtn:'Browse insurable orders',
+  curveDay:'Day', curveReleased:'released',
+  gateT:'Connect to view this page', gateP:'Insurance and My Policies read from your wallet. Connect to load your orders and policies — it takes a moment.',
+  gateBtn:'Connect wallet', previewNote:'Preview',
+  langLabel:'Language', themeLabel:'Appearance',
+  themeLight:'Light', themeDark:'Dark'
+ },
+ zh:{
+  navHome:'首页', navInsure:'投保', navPortfolio:'我的保单',
+  connect:'连接钱包', disconnect:'断开钱包', menu:'菜单',
+  poweredBy:'已支持的预测市场',
+  metricEyebrow:'协议保证',
+  m1v:'100%', m1l:'未命中即返还全额本金',
+  m2v:'365 天', m2l:'线性释放周期',
+  m3v:'1,284', m3l:'累计已结算理赔单',
+  m4v:'$3.9M', m4l:'累计已返还本金',
+  heroEyebrow:'链上本金保险 · v1',
+  hvBarTitle:'保障引擎',
+  hvCardMkt:'BTC 全网算力创历史新高',
+  hvFootLeft:'365 天线性释放', hvFootRight:'链上保单',
+  whatCoverageH:'行为可预期的保障。',
+  whatCoverageLede:'四项保障写入合约本身，而非写在宣传文案里。',
+  marketsH:'已接入，即刻可用。',
+  heroTitle:'为每一次预测，守住本金。',
+  heroLede:'CoverFi 为你在 Signa 的预测订单提供保险。若订单结算为未命中，100% 本金将在保障周期内线性返还。保费与赔付均在链上运行，结算依据市场预言机。',
+  howItWorks:'工作原理', coverage:'保障内容', faq:'常见问题',
+  s1:'100%', s1l:'本金保障', s2:'365 天', s2l:'线性释放',
+  s3:'链上', s3l:'代码定价与结算', s4:'不可转让', s4l:'链上保单',
+  threeSteps:'三个步骤。', stepsLede:'保险与市场并行，不改变你在 Signa 的任何交易方式。',
+  st1t:'在 Signa 建立预测订单', st1d:'按惯常方式建立一笔预测市场订单 —— CoverFi 不介入你的交易本身。',
+  st2t:'回到本站为订单投保', st2d:'连接同一钱包，支付一笔保费，链上即铸造一份不可转让的保单。',
+  st3t:'未命中则取回本金', st3d:'若订单未命中，100% 本金在 365 天内线性释放，随时可领取。',
+  st1m:'无需任何接入', st2m:'一笔链上交易', st3m:'可持续领取',
+  whatCoverage:'保障为你提供什么',
+  supportedMarkets:'目前支持的预测市场',
+  signaDesc:'CoverFi 直接读取你在 Signa 的订单。连接同一钱包，即可为任意符合条件的持仓投保。',
+  liveIntegration:'已接入',
+  moreMarkets:'更多预测市场将在后续版本中陆续支持。',
+  v1t:'100% 本金保障', v1d:'未命中返还的是全额本金，而非其中一部分。这是其余一切机制围绕的唯一承诺。',
+  vfTag:'核心承诺',
+  v2t:'链上保险合约', v2d:'每份保单都是铸造至你钱包的不可转让合约。',
+  v3t:'链上保费与赔付', v3d:'保费与赔付按固定规则在链上执行，结算结果由市场预言机读取。',
+  v4t:'条款清晰', v4d:'一笔保费，无论命中与否均不退还，事先写明。',
+  commonQ:'常见问题。',
+  faqs:[
+   ['保费如何计算？','保费反映市场认为你的持仓未命中的可能性 —— 结果越不确定，保费越高。保费设有本金 5% 的下限，实际应付保费取两者中的较大值。'],
+   ['保险何时赔付？','保险仅在被保选项结算为未命中时触发。结算结果由市场预言机读取。若选项命中，保单关闭，保费不退还。'],
+   ['本金如何返还？','结算后，100% 本金在 365 天内线性释放。已释放部分可随时领取，未领取的会累积。'],
+   ['市场流局时怎么办？','若市场流局或无明确结果，保险不触发，保单作废并退还保费。'],
+   ['保单可以转让或出售吗？','不可以。v1 版本的链上保险合约不可转让 —— 它始终绑定在购买它的钱包上。这样做是为了让保单与它所保障的真实持仓一一对应，避免保障被拿去二级市场炒卖。后续版本可能会考虑支持转让。']
+  ],
+  footTagline:'链上预测市场的本金保障层',
+  footColProduct:'产品', footColResource:'资源',
+  footL1:'可投保订单', footL2:'我的保单', footL3:'工作原理',
+  footL4:'文档', footL5:'合约与审计', footL6:'常见问题',
+  footMeta:'CoverFi Protocol · v1.0 · 模拟原型',
+  footStatus:'所有系统运行正常',
+  insureTitle:'可投保订单',
+  insureSub:'本钱包在 Signa 上符合投保条件的订单 —— 市场已进入白名单、仍处于开放状态、且尚未被投保。',
+  pq:'q', pfloor:'保费下限', pperiod:'保障周期', linear:'线性',
+  estPremium:'预估保费', insure:'投保', floor:'已触下限',
+  emptyOrdersT:'暂无可投保订单', emptyOrdersD:'先在 Signa 建立一笔订单，再回来投保。',
+  reviewCrumb:'确认', reviewTitle:'核对并确认',
+  orderCoverage:'订单与保障', insuredOption:'被保选项', principal:'本金',
+  youPay:'你支付', youreCovered:'你将获得保障',
+  impliedProb:'隐含概率', basePremium:'基础保费', premiumFloor:'保费下限',
+  premiumPayable:'实际应付保费', coverageAmount:'保障额', coverPeriod:'保障周期',
+  floorOn:(b,f)=>`已触下限。基础保费（${b} USDC）低于本金 5% 的最低值，因此实际应付保费按下限计 —— ${f} USDC。`,
+  floorOff:f=>`实际应付保费取基础保费与本金 5% 最低值（${f} USDC）中的较大值。`,
+  terms:'条款',
+  t1:'保费一次性支付，若选项命中则不退还。',
+  t2:'保费与保障额在购买时即锁定，此后市场变动不影响本保单。',
+  t3:'未命中时，本金自结算起在 365 天内线性释放。',
+  t4:'若市场流局，保险不触发，保费退还。',
+  t5:'保单为不可转让的链上合约。',
+  walletBalance:'钱包余额', premium:'保费', payPremium:'支付保费',
+  pfTitle:'我的保单',
+  pfSub:'先是你的整体参保概览，下面是铸造至本钱包的全部保单，按保障生命周期阶段分组。',
+  ovTitle:'参保概览',
+  totalPrincipal:'总参保本金', claimedPayout:'已领取赔付', unclaimedPayout:'待领取赔付',
+  claimableNow:'当前可领取', recoveredToDate:'累计已收回本金', underCover:'生效赔付本金',
+  acrossN:n=>`共 ${n} 份保单`,
+  activeN:n=>`${n} 份生效中`,
+  acrossPolicies:n=>`分布于 ${n} 份保单`,
+  releasedLc:'已释放',
+  claimAll:'全部领取',
+  gPaying:'赔付中', gPaid:'已赔付完成',
+  gCovered:'保障生效中', gNopay:'无需赔付',
+  claimable:'可领取', recovered:'已收回', coverageCol:'保障额',
+  premiumKept:'保费已留存', released:'已释放', open:'查看',
+  contractTitle:'保险合约', linkedOrder:'关联 Signa 订单', market:'市场',
+  premiumPaid:'已付保费',
+  transferability:'可转让性', nonTransferable:'不可转让',
+  principalRelease:'本金释放', settlementDay0:'结算 · 第 0 天', day365:'第 365 天',
+  claimed:'已领取', claimableNowCol:'当前可领取', ofReleased:(a,b,p)=>`${b} USDC 中已释放 ${a} · ${p}%`,
+  fullReimbursed:'本保单已全额返还你的本金，无可领取余额。',
+  claimBtn:a=>`领取 ${a} USDC`, nothingClaim:'暂无可领取',
+  statusH:'状态',
+  stActive:a=>`保障生效中。若被保选项结算为未命中，${a} USDC 本金将在 365 天内开始线性释放。结算前无可领取。`,
+  stHit:p=>`被保选项已命中，保险未触发。保单已关闭，${p} USDC 保费予以留存 —— 这是对冲的成本。`,
+  stVoid:p=>`市场流局且无明确结果。保险未触发，保单关闭，${p} USDC 保费不予退还。`,
+  timeline:'状态时间线',
+  tlMinted:'保单已铸造', tlInsured:v=>`保费 ${v} USDC`,
+  tlAwait:'等待市场结算', tlMintedAgo:d=>`${d} 天前铸造`, tlSettlement:'市场结算', tlPending:'待定',
+  tlWon:'已结算 · 选项命中', tlAgo:d=>`${d} 天前`, tlClosed:'保单已关闭', tlPremKept:'保费留存 · 无赔付',
+  tlVoided:'市场流局', tlRefunded:'保单已关闭', tlReturned:p=>`保费留存 · 无赔付`,
+  tlMissed:'已结算 · 选项未命中', tlReimbursed:'已全额返还', tlReleasing:'本金释放中',
+  tlDaysFull:'365 / 365 天', tlDays:d=>`${d} / 365 天`, tlRelDone:'释放完成',
+  stsActive:'保障生效中', stsReleasing:'赔付中', stsCompleted:'已赔付完成', stsHit:'选项命中', stsVoid:'市场流局',
+  walletModalT:'连接钱包', walletModalP:'请使用你在 Signa 交易时所用的同一钱包。此为模拟，不会发生真实连接。',
+  extension:'浏览器扩展', scanMobile:'手机扫码',
+  minting:'铸造保单', mintingSub:'支付保费并铸造你的保险合约。',
+  claimingT:'处理领取', claimingSub:'正在将已释放本金转入你的钱包。',
+  batchT:'处理批量领取', batchSub:'在一笔交易中结算所有赔付中的保单。',
+  connected:n=>`${n} 已连接`, disconnected:'钱包已断开',
+  minted:id=>`保单 ${id} 已铸造`, claimedToast:a=>`已领取 ${a} USDC`, claimedBatch:a=>`已领取 ${a} USDC`,
+  cwTitle:n=>`正在连接 ${n}`, approveConn:'请在钱包中确认连接请求。',
+  batchDone:n=>`已结算 ${n} 份保单`,
+  errInsufTitle:'余额不足',
+  errInsufMsg:(need,have)=>`该保单需支付 ${need} USDC 保费，但你的钱包仅有 ${have} USDC。请充值后重试。`,
+  dismiss:'关闭',
+  searchPh:'搜索市场或编号',
+  sortPremiumHi:'保费 ↓', sortPremiumLo:'保费 ↑', sortPrincipalHi:'本金 ↓',
+  sortClosesSoon:'临近截止',
+  filterAll:'全部',
+  noMatch:'无匹配结果', noMatchD:'换个搜索词，或清除筛选条件。',
+  clearFilters:'清除筛选', resultCount:n=>`${n} 条结果`,
+  activityTitle:'近期活动',
+  actMint:'已付保费', actClaim:'已领赔付', actVoid:'市场流局',
+  daysAgoShort:n=>n===0?'刚刚':`${n} 天前`,
+  liveUpdated:s=>`${s} 秒前更新`,
+  emptyPoliciesT:'还没有保单', emptyPoliciesD:'为一笔 Signa 持仓投保，铸造你的第一份保障保单。',
+  emptyPoliciesBtn:'浏览可投保订单',
+  curveDay:'第', curveReleased:'已释放',
+  gateT:'连接钱包以查看此页', gateP:'「投保」与「我的保单」需读取你的钱包数据。连接后即可载入你的订单与保单 —— 仅需片刻。',
+  gateBtn:'连接钱包', previewNote:'预览',
+  langLabel:'语言', themeLabel:'外观',
+  themeLight:'亮色', themeDark:'暗色'
+ }
+};
+
+/* ============ data ============ */
+const Q=0.5, F=0.05, RELEASE_DAYS=365;
+let ORDERS=[
+ {id:'SGA-7741',catEn:'Macro',catZh:'宏观',mEn:'The Fed cuts its policy rate at the Q3 meeting',mZh:'美联储在三季度会议上下调政策利率',optEn:'Yes',optZh:'是',a:512.40,mktTVL:1240000,optTVL:384400,closes:18},
+ {id:'SGA-7720',catEn:'Crypto',catZh:'加密',mEn:'ETH closes above $4,000 on Jun 30',mZh:'ETH 在 6 月 30 日收于 4,000 美元上方',optEn:'Yes',optZh:'是',a:283.75,mktTVL:880000,optTVL:545600,closes:9},
+ {id:'SGA-7698',catEn:'Technology',catZh:'科技',mEn:'A major AI lab ships a new flagship model in Q3',mZh:'某主要 AI 实验室在三季度发布新旗舰模型',optEn:'Yes',optZh:'是',a:874.20,mktTVL:2100000,optTVL:1953000,closes:34},
+ {id:'SGA-7655',catEn:'Climate',catZh:'气候',mEn:'Global average temperature sets a yearly record',mZh:'全球年平均气温创下纪录',optEn:'No',optZh:'否',a:146.80,mktTVL:610000,optTVL:134200,closes:52},
+ {id:'SGA-7642',catEn:'Crypto',catZh:'加密',mEn:'Total stablecoin supply exceeds $300B by year-end',mZh:'稳定币总供应量年底前突破 3000 亿美元',optEn:'Yes',optZh:'是',a:1240.00,mktTVL:1500000,optTVL:735000,closes:120},
+];
+let POLICIES=[
+ {id:'CF-00231',order:'SGA-7611',catEn:'Crypto',catZh:'加密',mEn:'BTC network hashrate sets a new all-time high in Q3',mZh:'BTC 全网算力在三季度创历史新高',optEn:'Yes',optZh:'是',a:638.50,k:0.41,premium:188.36,status:'active',mintedDaysAgo:6},
+ {id:'CF-00221',order:'SGA-7588',catEn:'Macro',catZh:'宏观',mEn:'Headline CPI prints below 3.0% for the month',mZh:'当月 CPI 同比低于 3.0%',optEn:'Yes',optZh:'是',a:792.30,k:0.38,premium:245.61,status:'active',mintedDaysAgo:2},
+ {id:'CF-00198',order:'SGA-7540',catEn:'Macro',catZh:'宏观',mEn:'Q2 GDP growth comes in above the consensus forecast',mZh:'二季度 GDP 增速高于市场一致预期',optEn:'Yes',optZh:'是',a:417.60,k:0.35,premium:135.72,status:'releasing',settledDaysAgo:78,claimed:35.00},
+ {id:'CF-00176',order:'SGA-7470',catEn:'Crypto',catZh:'加密',mEn:'A top-5 exchange lists a new spot ETF product',mZh:'某前五交易所上线新的现货 ETF 产品',optEn:'No',optZh:'否',a:529.90,k:0.46,premium:143.07,status:'releasing',settledDaysAgo:205,claimed:180.00},
+ {id:'CF-00150',order:'SGA-7388',catEn:'Crypto',catZh:'加密',mEn:'Average ETH gas stays below 8 gwei through May',mZh:'5 月 ETH 平均 gas 持续低于 8 gwei',optEn:'Yes',optZh:'是',a:364.25,k:0.28,premium:131.13,status:'completed',settledDaysAgo:400,claimed:364.25},
+ {id:'CF-00112',order:'SGA-7301',catEn:'Crypto',catZh:'加密',mEn:'A new stablecoin reaches $1B supply within 90 days',mZh:'某新稳定币在 90 天内供应量达 10 亿美元',optEn:'Yes',optZh:'是',a:455.80,k:0.44,premium:127.62,status:'hit',settledDaysAgo:60},
+ {id:'CF-00087',order:'SGA-7155',catEn:'Climate',catZh:'气候',mEn:'A regional weather index closes above its threshold',mZh:'某区域气象指数收于阈值上方',optEn:'Yes',optZh:'是',a:208.40,k:0.50,premium:52.10,status:'void',voidedDaysAgo:21},
+];
+let polCounter=232;
+
+let ACTIVITY=[
+ {type:'claim',id:'CF-00176',amt:73.50,mkt:{mEn:'A top-5 exchange lists a new spot ETF product',mZh:'某前五交易所上线新的现货 ETF 产品'},ago:3},
+ {type:'mint',id:'CF-00231',amt:188.36,mkt:{mEn:'BTC network hashrate sets a new all-time high in Q3',mZh:'BTC 全网算力在三季度创历史新高'},ago:6},
+ {type:'claim',id:'CF-00198',amt:35.00,mkt:{mEn:'Q2 GDP growth comes in above the consensus forecast',mZh:'二季度 GDP 增速高于市场一致预期'},ago:11},
+ {type:'mint',id:'CF-00221',amt:245.61,mkt:{mEn:'Headline CPI prints below 3.0% for the month',mZh:'当月 CPI 同比低于 3.0%'},ago:14},
+ {type:'void',id:'CF-00087',amt:0,mkt:{mEn:'A regional weather index closes above its threshold',mZh:'某区域气象指数收于阈值上方'},ago:21},
+ {type:'claim',id:'CF-00150',amt:120.00,mkt:{mEn:'Average ETH gas stays below 8 gwei through May',mZh:'5 月 ETH 平均 gas 持续低于 8 gwei'},ago:40},
+];
+
+const browserZh=(navigator.language||'').toLowerCase().startsWith('zh');
+const sysDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;
+let state={view:'home',connected:false,address:'0x7a3f…9c2e',balance:2450.00,
+  selectedOrder:null,policyId:null,drawer:false,
+  lang:browserZh?'zh':'en', theme:sysDark?'dark':'light', themeManual:false, pendingView:null,
+  ordSort:'closes', ordSearch:'',
+  polSearch:'', polFilter:'all',
+  _skipSkel:false};
+document.body.setAttribute('data-theme',state.theme);
+if(window.matchMedia){
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',e=>{
+    if(state.themeManual) return;
+    state.theme=e.matches?'dark':'light';
+    document.body.setAttribute('data-theme',state.theme);
+    renderNav();
+  });
+}
+
+const $=s=>document.querySelector(s);
+const L=()=>T[state.lang];
+const money=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct=k=>Math.round(k*100)+'%';
+const kOf=o=>o.optTVL/o.mktTVL;
+const cat=o=>state.lang==='zh'?o.catZh:o.catEn;
+const mkt=o=>state.lang==='zh'?o.mZh:o.mEn;
+const opt=o=>state.lang==='zh'?o.optZh:o.optEn;
+function premiumOf(a,k){const base=Q*(1-k)*a;const floor=F*a;return{base,floor,payable:Math.max(base,floor),floored:floor>base};}
+function releasedOf(p){if(p.status==='releasing'||p.status==='completed')return p.a*Math.min((p.settledDaysAgo||0)/RELEASE_DAYS,1);return 0;}
+function claimableOf(p){return Math.max(0,releasedOf(p)-(p.claimed||0));}
+function bucketOf(p){
+ if(p.status==='active')return'covered';
+ if(p.status==='releasing')return'paying';
+ if(p.status==='completed')return'paid';
+ return'nopay';
+}
+function statusBadge(s){
+ const t=L();
+ const map={active:[t.stsActive,''],releasing:[t.stsReleasing,'b-sig'],completed:[t.stsCompleted,'b-good'],
+   hit:[t.stsHit,''],void:[t.stsVoid,'']};
+ return `<span class="badge ${map[s][1]}"><span class="d"></span>${map[s][0]}</span>`;
+}
+const I={
+ shield:'<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
+ code:'<path d="M9 8l-4 4 4 4M15 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+ doc:'<path d="M7 4h7l4 4v12H7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M13 4v5h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
+ layer:'<path d="M12 4l8 4-8 4-8-4z M4 12l8 4 8-4 M4 16l8 4 8-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
+ arrow:'<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+ empty:'<rect x="4" y="6" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 11h16" stroke="currentColor" stroke-width="1.6"/>',
+ lock:'<rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 11V8a4 4 0 018 0v3" fill="none" stroke="currentColor" stroke-width="1.7"/>',
+ sun:'<circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+ moon:'<path d="M20 14a8 8 0 01-10-10 8 8 0 1010 10z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
+ search:'<circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15.5 15.5L20 20" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+ home:'<path d="M4 11l8-6 8 6M6 10v9h12v-9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
+ fStep1:'<path d="M5 17V9l5-4 5 4M14 13l5-4v8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 19h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+ fStep2:'<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 11.5l2.2 2.2L15.5 9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+ fStep3:'<path d="M12 4v11M12 15l-4-4M12 15l4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 19h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+};
+const svg=(inner,size)=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24">${inner}</svg>`;
+
+/* ============ hero key visual ============ */
+function heroVisualSVG(){
+ return `<svg viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg" class="hz-svg" role="img" aria-label="CoverFi coverage engine">
+   <defs>
+     <style>
+       .hz-mn{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+       .hz-sn{font-family:'IBM Plex Sans',ui-sans-serif,sans-serif;}
+       .hz-kk{font-size:12px;font-weight:500;letter-spacing:0.06em;fill:#8B8B92;}
+       .hz-ds{font-size:10px;fill:#8B8B92;}
+       .hz-dm{font-size:13px;fill:#ECECEF;}
+     </style>
+     <pattern id="crossgrid" width="40" height="40" patternUnits="userSpaceOnUse">
+       <path d="M 20 18 L 20 22 M 18 20 L 22 20" fill="none" stroke="#3C3C40" stroke-opacity="0.5" stroke-width="1"/>
+     </pattern>
+     <g id="cf-mark-micro">
+       <rect x="2.8" y="2.8" width="14.4" height="14.4" rx="3.2" fill="none" stroke="#ECECEF" stroke-width="1.6"/>
+       <rect x="5.2" y="5.2" width="5.6" height="5.6" rx="1.4" fill="#ECECEF"/>
+     </g>
+   </defs>
+   <rect width="800" height="800" fill="#0B0B0D"/>
+   <rect width="800" height="800" fill="url(#crossgrid)"/>
+   <rect x="120" y="120" width="560" height="560" rx="24" fill="none" stroke="#3C3C40" stroke-dasharray="4 4" stroke-width="1"/>
+   <path d="M 120 240 H 280 V 360 H 400" fill="none" stroke="#3C3C40" stroke-width="1"/>
+   <path d="M 680 440 H 520 V 560 H 400" fill="none" stroke="#3C3C40" stroke-width="1"/>
+   <path d="M 400 120 V 280 H 560 V 400" fill="none" stroke="#3C3C40" stroke-width="1"/>
+   <path d="M 400 680 V 520 H 240 V 400" fill="none" stroke="#3C3C40" stroke-width="1"/>
+   <rect x="277" y="237" width="6" height="6" rx="1" fill="#0B0B0D" stroke="#8B8B92" stroke-width="1"/>
+   <rect x="517" y="437" width="6" height="6" rx="1" fill="#0B0B0D" stroke="#8B8B92" stroke-width="1"/>
+   <rect x="557" y="277" width="6" height="6" rx="1" fill="#0B0B0D" stroke="#8B8B92" stroke-width="1"/>
+   <rect x="237" y="517" width="6" height="6" rx="1" fill="#0B0B0D" stroke="#8B8B92" stroke-width="1"/>
+   <path d="M 320 480 V 320 H 480" fill="none" stroke="#ECECEF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+   <rect x="352" y="352" width="64" height="64" rx="12" fill="#ECECEF"/>
+   <path d="M 0 384 H 200 V 352 H 352" fill="none" stroke="#2347D9" stroke-width="2"/>
+   <circle cx="352" cy="352" r="4" fill="#0B0B0D" stroke="#2347D9" stroke-width="2"/>
+   <circle cx="200" cy="384" r="3" fill="#2347D9"/>
+   <circle cx="40" cy="384" r="2" fill="#2347D9"/>
+   <path d="M 416 416 V 600 H 800" fill="none" stroke="#2347D9" stroke-width="1" stroke-dasharray="2 4"/>
+   <rect x="413" y="597" width="6" height="6" fill="#2347D9"/>
+   <text x="40" y="60" class="hz-mn hz-kk">01 — EXECUTION STATE</text>
+   <line x1="40" y1="76" x2="160" y2="76" stroke="#3C3C40" stroke-width="1"/>
+   <text x="40" y="100" class="hz-mn hz-ds">NODE_ID</text>
+   <text x="120" y="100" class="hz-mn hz-dm">BAYES_0x9A</text>
+   <text x="40" y="120" class="hz-mn hz-ds">AUTH_LEVEL</text>
+   <text x="120" y="120" class="hz-mn hz-dm">SIGNA_ADMIN</text>
+   <text x="40" y="140" class="hz-mn hz-ds">INDEX_POOL</text>
+   <text x="120" y="140" class="hz-mn hz-dm">UNIPREDICT_CORE</text>
+   <rect x="40" y="640" width="300" height="120" rx="8" fill="#0B0B0D" stroke="#3C3C40" stroke-width="1"/>
+   <g transform="translate(60, 664)">
+     <text x="0" y="0" class="hz-mn hz-ds">coverfi.write({</text>
+     <text x="16" y="20" class="hz-mn hz-dm">market: <tspan fill="#8B8B92">address(BAYES_PRD),</tspan></text>
+     <text x="16" y="40" class="hz-mn hz-dm">outcome: <tspan fill="#8B8B92">1,</tspan></text>
+     <text x="16" y="60" class="hz-mn hz-dm">notional: <tspan fill="#8B8B92">"50000_USDC"</tspan></text>
+     <text x="0" y="80" class="hz-mn hz-ds">});</text>
+   </g>
+   <rect x="600" y="120" width="160" height="80" fill="none" stroke="#3C3C40" stroke-width="1" stroke-dasharray="2 2"/>
+   <text x="620" y="144" class="hz-mn hz-ds">SETTLEMENT_LATENCY</text>
+   <text x="620" y="168" class="hz-sn" font-size="24" font-weight="500" fill="#ECECEF">1.2s</text>
+   <text x="320" y="300" class="hz-mn hz-ds" style="fill:#2347D9">COVERAGE_TRIGGERED</text>
+   <text x="492" y="330" class="hz-mn hz-ds">RISK_ISOLATED</text>
+   <text x="210" y="378" class="hz-mn hz-ds">INCOMING_VOL</text>
+   <text x="424" y="594" class="hz-mn hz-ds">DETERMINISTIC_PAYOUT</text>
+   <use href="#cf-mark-micro" x="650" y="740"/>
+   <text x="676" y="752" class="hz-sn" font-size="13" font-weight="500" fill="#ECECEF">CoverFi <tspan font-weight="400" fill="#8B8B92">Protocol</tspan></text>
+   <text x="650" y="770" class="hz-mn" font-size="10" fill="#3C3C40">v1.0.4-stable</text>
+ </svg>`;
+}
+
+/* ============ nav ============ */
+function renderNav(){
+ const t=L();
+ const d=$('#nav-desktop');
+ const r=$('#nav-right');
+ const themeIcon=state.theme==='dark'?I.sun:I.moon;
+
+ const links=[
+   {v:'insurance',l:t.navInsure},
+   {v:'portfolio',l:t.navPortfolio}
+ ];
+ d.innerHTML=links.map(i=>{
+   const on=state.view===i.v?'on':'';
+   const lock=(!state.connected)?`<span class="lk">${svg(I.lock,12)}</span>`:'';
+   return `<a class="${on}" data-act="nav" data-view="${i.v}">${i.l}${lock}</a>`;
+ }).join('');
+
+ const ctrls=`
+   <div class="seg seg-desktop">
+     <button data-act="lang" data-lang="en" class="${state.lang==='en'?'on':''}">EN</button>
+     <button data-act="lang" data-lang="zh" class="${state.lang==='zh'?'on':''}">中</button>
+   </div>
+   <button class="iconbtn iconbtn-desktop" data-act="settheme" data-theme="${state.theme==='dark'?'light':'dark'}" aria-label="theme">${svg(themeIcon,17)}</button>`;
+ const wallet=state.connected
+   ? `<button class="addr" data-act="disconnect" title="${t.disconnect}"><span class="live"></span>${state.address}</button>`
+   : `<button class="btn btn-primary btn-sm" data-act="connect">${t.connect}</button>`;
+ r.innerHTML=ctrls+wallet;
+
+ renderDrawer();
+}
+function renderDrawer(){
+ const t=L();const p=$('#drawer-panel');
+ const links=[
+   {v:'home',l:t.navHome,ic:I.home},
+   {v:'insurance',l:t.navInsure,ic:I.shield},
+   {v:'portfolio',l:t.navPortfolio,ic:I.doc}
+ ];
+ const navHtml=links.map(i=>{
+   const on=state.view===i.v?'on':'';
+   const lock=(!state.connected&&i.v!=='home')?`<span class="dlk">${svg(I.lock,13)}</span>`:'';
+   return `<a class="dnav ${on}" data-act="nav" data-view="${i.v}">
+     <span class="dn-ic">${svg(i.ic,18)}</span><span class="dn-l">${i.l}</span>${lock}
+     <span class="dn-arr">${svg(I.arrow,15)}</span></a>`;
+ }).join('');
+
+ let h=`<div class="d-sec">${navHtml}</div>`;
+
+ h+=`<div class="d-divider"></div>
+   <div class="d-row">
+     <span class="d-row-l">${t.langLabel}</span>
+     <div class="seg">
+       <button data-act="lang" data-lang="en" class="${state.lang==='en'?'on':''}">EN</button>
+       <button data-act="lang" data-lang="zh" class="${state.lang==='zh'?'on':''}">中文</button>
+     </div>
+   </div>
+   <div class="d-row">
+     <span class="d-row-l">${t.themeLabel}</span>
+     <div class="seg">
+       <button data-act="settheme" data-theme="light" class="${state.theme==='light'?'on':''}">${t.themeLight}</button>
+       <button data-act="settheme" data-theme="dark" class="${state.theme==='dark'?'on':''}">${t.themeDark}</button>
+     </div>
+   </div>`;
+
+ h+=`<div class="d-foot">`;
+ if(!state.connected){
+   h+=`<button class="btn btn-primary btn-block" data-act="connect">${t.connect}</button>`;
+ }else{
+   h+=`<div class="d-wallet"><span class="live"></span>${state.address}
+       <span class="d-bal">${money(state.balance)} USDC</span></div>
+       <button class="btn btn-ghost btn-block" data-act="disconnect">${t.disconnect}</button>`;
+ }
+ h+=`</div>`;
+
+ p.innerHTML=h;
+ $('#drawer').classList.toggle('open',state.drawer);
+}
+
+/* ============ views ============ */
+const views={};
+
+function heroMotif(){
+ const t=L();
+ return `<div class="hv2-stage">
+  <div class="hv2-deck">
+
+   <div class="hv2-card hv2-card-c">
+     <div class="hv2-c-head">
+       <span class="hv2-c-brand">
+         <svg class="hv2-c-mark" viewBox="0 0 100 100"><use href="#mk"/></svg>
+         <span class="hv2-c-id">CF-00150</span>
+       </span>
+       <span class="hv2-c-badge b-good"><span class="hv2-c-dot"></span>${t.stsCompleted}</span>
+     </div>
+     <div class="hv2-c-mini">
+       <span class="mk">${t.recovered}</span>
+       <span class="mv">364.25<i> USDC</i></span>
+     </div>
+   </div>
+
+   <div class="hv2-card hv2-card-b">
+     <div class="hv2-c-head">
+       <span class="hv2-c-brand">
+         <svg class="hv2-c-mark" viewBox="0 0 100 100"><use href="#mk"/></svg>
+         <span class="hv2-c-id">CF-00221</span>
+       </span>
+       <span class="hv2-c-badge b-mut"><span class="hv2-c-dot"></span>${t.stsActive}</span>
+     </div>
+     <div class="hv2-c-mini">
+       <span class="mk">${t.coverageCol}</span>
+       <span class="mv">792.30<i> USDC</i></span>
+     </div>
+   </div>
+
+   <div class="hv2-card hv2-card-a">
+     <div class="hv2-c-head">
+       <span class="hv2-c-brand">
+         <svg class="hv2-c-mark" viewBox="0 0 100 100"><use href="#mk"/></svg>
+         <span class="hv2-c-id">CF-00231</span>
+       </span>
+       <span class="hv2-c-badge b-sig"><span class="hv2-c-dot live"></span>${t.stsReleasing}</span>
+     </div>
+     <div class="hv2-c-mkt">${t.hvCardMkt}</div>
+     <div class="hv2-c-div"></div>
+     <div class="hv2-c-figs">
+       <div class="hv2-c-fig">
+         <span class="hv2-c-k">${t.principal}</span>
+         <span class="hv2-c-v">638.50<i> USDC</i></span>
+       </div>
+       <div class="hv2-c-fig">
+         <span class="hv2-c-k">${t.coverageCol}</span>
+         <span class="hv2-c-v accent">100<i>%</i></span>
+       </div>
+     </div>
+     <div class="hv2-c-rel">
+       <div class="hv2-c-rel-top">
+         <span class="hv2-c-k">${t.principalRelease}</span>
+         <span class="hv2-c-rel-pct">63%</span>
+       </div>
+       <div class="hv2-c-bar"><i></i></div>
+     </div>
+     <div class="hv2-c-foot">
+       <span>${t.hvFootLeft}</span>
+       <span><b>${t.hvFootRight}</b></span>
+     </div>
+   </div>
+
+  </div>
+ </div>`;
+}
+
+views.home=()=>{
+ const t=L();
+ return `
+ <div class="hero">
+  <div class="hero-grid-bg" aria-hidden="true"></div>
+  <div class="wrap">
+   <div class="hero-cols">
+    <div class="hero-in rise">
+      <span class="hero-eyebrow"><span class="he-dot"></span>${t.heroEyebrow}</span>
+      <h1 class="h1">${t.heroTitle}</h1>
+      <p class="lede">${t.heroLede}</p>
+      <div class="cta-row">
+        <button class="btn btn-primary" data-act="nav" data-view="insurance">${t.navInsure} ${svg(I.arrow,14)}</button>
+        <button class="btn btn-ghost" data-act="nav" data-view="portfolio">${t.navPortfolio}</button>
+      </div>
+    </div>
+    <div class="hero-visual rise-2">${heroMotif()}</div>
+   </div>
+  </div>
+ </div>
+
+ <section class="metricband reveal">
+  <div class="wrap">
+   <div class="mb-grid">
+     <div class="mb-cell stagger"><div class="mb-v" data-count="${t.m1v}">${t.m1v}</div><div class="mb-l">${t.m1l}</div></div>
+     <div class="mb-cell stagger"><div class="mb-v" data-count="${t.m2v}">${t.m2v}</div><div class="mb-l">${t.m2l}</div></div>
+     <div class="mb-cell stagger"><div class="mb-v" data-count="${t.m3v}">${t.m3v}</div><div class="mb-l">${t.m3l}</div></div>
+     <div class="mb-cell stagger"><div class="mb-v" data-count="${t.m4v}">${t.m4v}</div><div class="mb-l">${t.m4l}</div></div>
+   </div>
+  </div>
+ </section>
+
+ <section class="block motif-bg reveal" id="how"><div class="wrap">
+   <p class="lbl">${t.howItWorks}</p>
+   <h2 class="h2">${t.threeSteps}</h2>
+   <p class="sectlede">${t.stepsLede}</p>
+   <div class="flow" id="flow">
+    <div class="flow-step">
+      <div class="fs-seq">STEP <b>01</b></div>
+      <div class="fs-badge">${svg(I.fStep1,30)}</div>
+      <div class="fs-body">
+        <h3>${t.st1t}</h3><p>${t.st1d}</p>
+        <span class="fs-meta"><span class="fm-dot"></span>${t.st1m}</span>
+      </div>
+    </div>
+    <div class="flow-link fl-1">${svg(I.arrow,13)}</div>
+    <div class="flow-step">
+      <div class="fs-seq">STEP <b>02</b></div>
+      <div class="fs-badge">${svg(I.fStep2,30)}</div>
+      <div class="fs-body">
+        <h3>${t.st2t}</h3><p>${t.st2d}</p>
+        <span class="fs-meta"><span class="fm-dot"></span>${t.st2m}</span>
+      </div>
+    </div>
+    <div class="flow-link fl-2">${svg(I.arrow,13)}</div>
+    <div class="flow-step">
+      <div class="fs-seq">STEP <b>03</b></div>
+      <div class="fs-badge">${svg(I.fStep3,30)}</div>
+      <div class="fs-body">
+        <h3>${t.st3t}</h3><p>${t.st3d}</p>
+        <span class="fs-meta"><span class="fm-dot"></span>${t.st3m}</span>
+      </div>
+    </div>
+   </div>
+ </div></section>
+
+ <section class="block reveal" id="value"><div class="wrap">
+   <p class="lbl">${t.coverage}</p>
+   <h2 class="h2">${t.whatCoverageH}</h2>
+   <p class="sectlede">${t.whatCoverageLede}</p>
+   <div class="valwrap">
+     <div class="val-feature stagger">
+       <svg class="vf-motif" viewBox="0 0 100 100" aria-hidden="true">
+         <rect class="vfm-fr" x="14" y="14" width="72" height="72" rx="16"/>
+         <rect class="vfm-sq" x="26" y="26" width="28" height="28" rx="7"/>
+       </svg>
+       <span class="vf-tag"><span class="vft-dot"></span>${t.vfTag}</span>
+       <div class="vf-icon">${svg(I.shield,24)}</div>
+       <div class="vf-h">${t.v1t}</div>
+       <p class="vf-p">${t.v1d}</p>
+     </div>
+     <div class="val-list stagger">
+       <div class="val-row">
+         <div class="vr-icon">${svg(I.doc,19)}</div>
+         <div class="vr-body"><div class="vr-h">${t.v2t}</div><p class="vr-p">${t.v2d}</p></div>
+         <span class="vr-idx">02</span>
+       </div>
+       <div class="val-row">
+         <div class="vr-icon">${svg(I.code,19)}</div>
+         <div class="vr-body"><div class="vr-h">${t.v3t}</div><p class="vr-p">${t.v3d}</p></div>
+         <span class="vr-idx">03</span>
+       </div>
+       <div class="val-row">
+         <div class="vr-icon">${svg(I.layer,19)}</div>
+         <div class="vr-body"><div class="vr-h">${t.v4t}</div><p class="vr-p">${t.v4d}</p></div>
+         <span class="vr-idx">04</span>
+       </div>
+     </div>
+   </div>
+ </div></section>
+
+ <section class="block reveal" id="markets"><div class="wrap">
+   <p class="lbl">${t.supportedMarkets}</p>
+   <h2 class="h2">${t.marketsH}</h2>
+   <div class="market-card">
+     <div class="market-logo"><svg viewBox="0 0 100 100"><use href="#signa"/></svg></div>
+     <div class="market-body">
+       <div class="market-name">Signa</div>
+       <p class="market-desc">${t.signaDesc}</p>
+     </div>
+     <span class="market-status"><span class="ms-dot"></span>${t.liveIntegration}</span>
+   </div>
+   <p class="market-note">${t.moreMarkets}</p>
+ </div></section>
+
+ <section class="block reveal" id="faq"><div class="wrap">
+   <p class="lbl">${t.faq}</p>
+   <h2 class="h2" style="margin-bottom:24px;">${t.commonQ}</h2>
+   <div class="faqwrap">
+   ${t.faqs.map((f,i)=>`<div class="faq-item" data-act="faq" data-i="${i}">
+       <div class="q">${f[0]}<span class="pm">+</span></div>
+       <div class="ans"><div class="ans-in">${f[1]}</div></div>
+     </div>`).join('')}
+   </div>
+ </div></section>
+
+ <footer class="site">
+   <svg class="foot-mark" viewBox="0 0 100 100" aria-hidden="true">
+     <rect class="fm-fr" x="14" y="14" width="72" height="72" rx="16"/>
+     <rect class="fm-sq" x="26" y="26" width="28" height="28" rx="7"/>
+   </svg>
+   <div class="wrap"><div class="foot-in">
+     <div class="foot-top">
+       <div class="foot-brand-blk">
+         <div class="foot-brand">
+           <svg viewBox="0 0 100 100"><use href="#mk"/></svg>
+           CoverFi <span class="fb-p">Protocol</span>
+         </div>
+         <p class="foot-tag">${t.footTagline}</p>
+       </div>
+       <div class="foot-cols">
+         <div class="foot-col">
+           <div class="foot-col-h">${t.footColProduct}</div>
+           <a data-act="nav" data-view="insurance">${t.footL1}</a>
+           <a data-act="nav" data-view="portfolio">${t.footL2}</a>
+           <a data-act="anchor" data-anchor="how">${t.footL3}</a>
+         </div>
+         <div class="foot-col">
+           <div class="foot-col-h">${t.footColResource}</div>
+           <a>${t.footL4}</a>
+           <a>${t.footL5}</a>
+           <a data-act="anchor" data-anchor="faq">${t.footL6}</a>
+         </div>
+       </div>
+     </div>
+     <div class="foot-bottom">
+       <span class="foot-meta">${t.footMeta}</span>
+       <span class="foot-status"><span class="fs-d"></span>${t.footStatus}</span>
+     </div>
+   </div></div>
+ </footer>`;
+};
+
+function orderCard(o,i){
+ const t=L();const k=kOf(o);const pr=premiumOf(o.a,k);
+ return `<div class="card row-card clk rise" style="animation-delay:${i*0.03}s" data-act="insure" data-id="${o.id}">
+     <div class="main">
+       <div class="cat">${cat(o)} · ${o.id}</div>
+       <div class="mkt">${mkt(o)}</div>
+       <div class="sub">
+         <span class="chip">${t.insuredOption} · ${opt(o)}</span>
+         <span class="chip">${t.principal} · ${money(o.a)} USDC</span>
+         <span class="chip">${state.lang==='zh'?'剩余 '+o.closes+' 天':'closes in '+o.closes+'d'}</span>
+       </div>
+     </div>
+     <div class="endcol">
+       <div class="el">${t.estPremium}</div>
+       <div class="ev">${money(pr.payable)}</div>
+       <div class="eu">USDC${pr.floored?' · '+t.floor:''}</div>
+     </div>
+     <button class="btn btn-primary btn-sm">${t.insure} ${svg(I.arrow,13)}</button>
+   </div>`;
+}
+function filteredOrders(){
+ const q=state.ordSearch.trim().toLowerCase();
+ let list=ORDERS.filter(o=>{
+   if(!q) return true;
+   return (mkt(o).toLowerCase().includes(q))||(o.id.toLowerCase().includes(q));
+ });
+ const s=state.ordSort;
+ list=list.slice().sort((a,b)=>{
+   if(s==='premiumHi') return premiumOf(b.a,kOf(b)).payable-premiumOf(a.a,kOf(a)).payable;
+   if(s==='premiumLo') return premiumOf(a.a,kOf(a)).payable-premiumOf(b.a,kOf(b)).payable;
+   if(s==='principalHi') return b.a-a.a;
+   if(s==='closes') return a.closes-b.closes;
+   return 0;
+ });
+ return list;
+}
+function ordersListHtml(){
+ const t=L();
+ const list=filteredOrders();
+ if(!list.length){
+   return `<div class="empty2"><div class="e-ic">${svg(I.search,20)}</div>
+     <div class="e-t">${t.noMatch}</div><div class="e-d">${t.noMatchD}</div>
+     <button class="btn btn-ghost btn-sm" data-act="ord-clear">${t.clearFilters}</button></div>`;
+ }
+ return `<div class="order-grid">`+list.map((o,i)=>orderCard(o,i)).join('')+`</div>`;
+}
+function ordersInner(){
+ const t=L();
+ if(!ORDERS.length) return `<div class="empty2"><div class="e-ic">${svg(I.empty,20)}</div>
+   <div class="e-t">${t.emptyOrdersT}</div><div class="e-d">${t.emptyOrdersD}</div></div>`;
+ const sorts=[['closes',t.sortClosesSoon],['premiumLo',t.sortPremiumLo],['premiumHi',t.sortPremiumHi],['principalHi',t.sortPrincipalHi]];
+ return `<div class="listbar">
+   <div class="lb-search">${svg(I.search,15)}
+     <input type="text" id="ord-search" placeholder="${t.searchPh}" value="${state.ordSearch}" autocomplete="off">
+   </div>
+   <select class="sortsel" id="ord-sort">
+     ${sorts.map(s=>`<option value="${s[0]}" ${state.ordSort===s[0]?'selected':''}>${s[1]}</option>`).join('')}
+   </select>
+   <span class="listcount" id="ord-count">${t.resultCount(filteredOrders().length)}</span>
+ </div>
+ <div id="orders-list">${ordersListHtml()}</div>`;
+}
+views.insurance=()=>{
+ const t=L();
+ return `<div class="page wrap">
+   <div class="page-head rise">
+     <div class="pagetitle">${t.insureTitle}</div>
+     <p class="pagesub">${t.insureSub}</p>
+     <div class="paramline"><span><b>${t.pfloor}</b> ${pct(F)}</span><span><b>${t.pperiod}</b> ${RELEASE_DAYS}d ${t.linear}</span><span class="liveupd"><span class="lu-dot"></span><span id="live-ts">${t.liveUpdated(3)}</span></span></div>
+   </div>
+   ${ordersInner()}
+ </div>`;
+};
+
+views.purchase=()=>{
+ const t=L();
+ const o=ORDERS.find(x=>x.id===state.selectedOrder);
+ if(!o) return views.insurance();
+ const k=kOf(o);const pr=premiumOf(o.a,k);
+ return `<div class="page wrap">
+  <div class="page-head rise">
+    <div class="crumb"><a data-act="nav" data-view="insurance">${t.insureTitle}</a> / ${t.reviewCrumb}</div>
+    <div class="pagetitle">${t.reviewTitle}</div>
+  </div>
+  <div class="grid2 rise-2">
+   <div class="card panel">
+     <h4>${t.orderCoverage}</h4>
+     <div style="font-family:var(--mono);font-size:11px;color:var(--text-3);">${cat(o)} · ${o.id}</div>
+     <div style="font-size:16px;font-weight:600;margin:5px 0 18px;letter-spacing:-0.01em;">${mkt(o)}</div>
+     <div class="paycover">
+       <div class="pc-cell">
+         <div class="pc-l">${t.youPay}</div>
+         <div class="pc-v">${money(pr.payable)}<span class="pc-u">USDC</span></div>
+       </div>
+       <div class="pc-arrow">${svg(I.arrow,18)}</div>
+       <div class="pc-cell pc-cover">
+         <div class="pc-l">${t.youreCovered}</div>
+         <div class="pc-v">${money(o.a)}<span class="pc-u">USDC</span></div>
+       </div>
+     </div>
+     <table class="terms">
+       <tr><td>${t.insuredOption}</td><td>${opt(o)}</td></tr>
+       <tr><td>${t.principal}</td><td><span class="big">${money(o.a)} USDC</span></td></tr>
+       <tr><td>${t.basePremium}</td><td>${money(pr.base)} USDC</td></tr>
+       <tr><td>${t.premiumFloor}</td><td>${money(pr.floor)} USDC</td></tr>
+       <tr><td>${t.premiumPayable}</td><td><span class="big">${money(pr.payable)} USDC</span></td></tr>
+       <tr><td>${t.coverageAmount}</td><td>${money(o.a)} USDC · 100%</td></tr>
+       <tr><td>${t.coverPeriod}</td><td>${RELEASE_DAYS}d ${t.linear}</td></tr>
+     </table>
+     <div class="notebox ${pr.floored?'on':''}">
+       ${pr.floored?t.floorOn(money(pr.base),money(pr.floor)):t.floorOff(money(pr.floor))}
+     </div>
+   </div>
+   <div class="card panel">
+     <h4>${t.terms}</h4>
+     <ul class="checklist">
+       <li>${t.t1}</li><li>${t.t2}</li><li>${t.t3}</li><li>${t.t4}</li><li>${t.t5}</li>
+     </ul>
+     <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:15px;">
+       <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-2);">
+         <span>${t.walletBalance}</span><span class="mono">${money(state.balance)} USDC</span></div>
+       <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-2);margin-top:7px;">
+         <span>${t.premium}</span><span class="mono">− ${money(pr.payable)} USDC</span></div>
+     </div>
+     <button class="btn btn-primary btn-block" style="margin-top:18px;" data-act="pay">${t.payPremium} · ${money(pr.payable)} USDC</button>
+   </div>
+  </div>
+ </div>`;
+};
+
+function releaseCurve(p,good){
+ const W=560,H=140;const cap=Math.min(p.settledDaysAgo||0,365);
+ const relX=(cap/365)*W, relY=H-(cap/365)*H;
+ const col=good?'var(--good)':'var(--signal)';
+ return `<div class="curve-wrap" style="position:relative;"
+     data-curve data-a="${p.a}" data-cap="${cap}" data-w="${W}" data-h="${H}">
+   <svg class="curve" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+   <defs><linearGradient id="cv${p.id}" x1="0" y1="0" x2="0" y2="1">
+     <stop offset="0" stop-color="${col}" stop-opacity="0.22"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+   <path d="M0 ${H} L${relX} ${relY} L${relX} ${H} Z" fill="url(#cv${p.id})"/>
+   <path d="M0 ${H} L${W} 0" stroke="var(--line-3)" stroke-width="1.5" stroke-dasharray="4 5" fill="none"/>
+   <path d="M0 ${H} L${relX} ${relY}" stroke="${col}" stroke-width="2.5" fill="none"/>
+   <circle cx="${relX}" cy="${relY}" r="4.5" fill="${col}"/>
+   <line class="cvline" x1="0" y1="0" x2="0" y2="${H}" stroke="${col}" stroke-width="1" stroke-dasharray="3 3" style="opacity:0"/>
+   <circle class="cdot" r="4" fill="${col}" stroke="var(--surface)" stroke-width="1.5"/>
+   </svg>
+   <div class="ctip"><span class="ct-d"></span><span class="ct-v"></span></div>
+ </div>`;
+}
+function initCurve(){
+ const wrap=document.querySelector('[data-curve]');
+ if(!wrap) return;
+ const t=L();
+ const a=parseFloat(wrap.dataset.a), cap=parseFloat(wrap.dataset.cap);
+ const W=parseFloat(wrap.dataset.w), H=parseFloat(wrap.dataset.h);
+ const svgEl=wrap.querySelector('svg'), line=wrap.querySelector('.cvline');
+ const dot=wrap.querySelector('.cdot'), tip=wrap.querySelector('.ctip');
+ const move=e=>{
+   const r=svgEl.getBoundingClientRect();
+   const px=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+   const day=Math.round(px*365);
+   const released=day<=cap?a*(day/365):a*(cap/365);
+   const sx=px*W, sy=H-(released/a)*H;
+   line.setAttribute('x1',sx);line.setAttribute('x2',sx);line.style.opacity=day<=cap?'0.6':'0.25';
+   dot.setAttribute('cx',sx);dot.setAttribute('cy',sy);dot.style.opacity=day<=cap?'1':'0.4';
+   tip.style.opacity='1';
+   tip.querySelector('.ct-d').textContent=t.curveDay+' '+day+' / 365';
+   tip.querySelector('.ct-v').textContent=money(released)+' USDC '+t.curveReleased;
+   const tx=Math.min(Math.max(e.clientX-r.left-tip.offsetWidth/2,0),r.width-tip.offsetWidth);
+   tip.style.left=tx+'px';
+   tip.style.top=Math.max(sy-tip.offsetHeight-10,0)+'px';
+ };
+ svgEl.addEventListener('mousemove',move);
+ svgEl.addEventListener('mouseleave',()=>{
+   line.style.opacity='0';dot.style.opacity='0';tip.style.opacity='0';
+ });
+}
+function policyTimeline(p){
+ const t=L();const steps=[];const good=p.status==='completed';
+ steps.push({t:t.tlMinted,d:t.tlInsured(money(p.premium)),cls:'done'});
+ if(p.status==='active'){
+   steps.push({t:t.tlAwait,d:t.tlMintedAgo(p.mintedDaysAgo),cls:'now'});
+   steps.push({t:t.tlSettlement,d:t.tlPending,cls:'future'});
+ }else if(p.status==='hit'){
+   steps.push({t:t.tlWon,d:t.tlAgo(p.settledDaysAgo),cls:'done'});
+   steps.push({t:t.tlClosed,d:t.tlPremKept,cls:'now'});
+ }else if(p.status==='void'){
+   steps.push({t:t.tlVoided,d:t.tlAgo(p.voidedDaysAgo),cls:'done'});
+   steps.push({t:t.tlRefunded,d:t.tlReturned(money(p.premium)),cls:'now'});
+ }else{
+   steps.push({t:t.tlMissed,d:t.tlAgo(p.settledDaysAgo),cls:'done'});
+   steps.push({t:good?t.tlReimbursed:t.tlReleasing,d:good?t.tlDaysFull:t.tlDays(Math.min(p.settledDaysAgo,365)),cls:good?'done g':'now'});
+   if(!good) steps.push({t:t.tlRelDone,d:t.day365,cls:'future'});
+ }
+ return `<div class="timeline">${steps.map(s=>`<div class="tl ${s.cls}"><div class="dot"></div><div><div class="tt">${s.t}</div><div class="td">${s.d}</div></div></div>`).join('')}</div>`;
+}
+views.policy=()=>{
+ const t=L();
+ const p=POLICIES.find(x=>x.id===state.policyId);
+ if(!p) return views.portfolio();
+ const released=releasedOf(p),claimable=claimableOf(p),claimed=p.claimed||0;
+ const good=p.status==='completed';
+ let block='';
+ if(p.status==='releasing'||good){
+   block=`<div class="card panel" style="margin-top:16px;">
+     <h4>${t.principalRelease}</h4>
+     ${releaseCurve(p,good)}
+     <div class="axis"><span>${t.settlementDay0}</span><span>${t.day365}</span></div>
+     <div class="relrow">
+       <div class="c"><div class="l">${t.released}</div><div class="v">${money(released)}</div></div>
+       <div class="c"><div class="l">${t.claimed}</div><div class="v">${money(claimed)}</div></div>
+       <div class="c ${good?'':'acc'}"><div class="l">${t.claimableNowCol}</div><div class="v">${money(claimable)}</div></div>
+     </div>
+     <div class="progress ${good?'g':''}"><div class="fill" style="width:${(released/p.a*100).toFixed(1)}%"></div></div>
+     <div style="font-family:var(--mono);font-size:12px;color:var(--text-3);margin-top:9px;">${t.ofReleased(money(released),money(p.a),(released/p.a*100).toFixed(1))}</div>
+     ${good
+       ? `<div class="notebox" style="margin-top:14px;">${t.fullReimbursed}</div>`
+       : `<button class="btn btn-primary btn-block" style="margin-top:15px;" data-act="claim" data-id="${p.id}" ${claimable<=0?'disabled':''}>${claimable>0?t.claimBtn(money(claimable)):t.nothingClaim}</button>`}
+   </div>`;
+ }else{
+   const msg=p.status==='active'?t.stActive(money(p.a)):p.status==='hit'?t.stHit(money(p.premium)):t.stVoid(money(p.premium));
+   block=`<div class="card panel" style="margin-top:16px;"><h4>${t.statusH}</h4><p style="font-size:14px;color:var(--text-2);">${msg}</p></div>`;
+ }
+ return `<div class="page wrap">
+  <div class="page-head rise">
+    <div class="crumb"><a data-act="nav" data-view="portfolio">${t.pfTitle}</a> / ${p.id}</div>
+    <div class="pagetitle">${t.contractTitle}</div>
+  </div>
+  <div class="grid2 rise-2">
+   <div>
+    <div class="cert">
+     <div class="cert-top">
+       <div><div class="pidl">policy</div><div class="pid">${p.id}</div></div>
+       ${statusBadge(p.status)}
+     </div>
+     <div class="cert-body">
+      <table class="terms">
+       <tr><td>${t.linkedOrder}</td><td>${p.order}</td></tr>
+       <tr><td>${t.market}</td><td style="font-family:var(--sans);color:var(--text);max-width:230px;white-space:normal;text-align:right;">${mkt(p)}</td></tr>
+       <tr><td>${t.insuredOption}</td><td>${opt(p)}</td></tr>
+       <tr><td>${t.principal}</td><td><span class="big">${money(p.a)} USDC</span></td></tr>
+       <tr><td>${t.premiumPaid}</td><td>${money(p.premium)} USDC</td></tr>
+       <tr><td>${t.coverageAmount}</td><td>${money(p.a)} USDC · 100%</td></tr>
+       <tr><td>${t.coverPeriod}</td><td>${RELEASE_DAYS}d ${t.linear}</td></tr>
+       <tr><td>${t.transferability}</td><td>${t.nonTransferable}</td></tr>
+      </table>
+     </div>
+    </div>
+    ${block}
+   </div>
+   <div class="card panel"><h4>${t.timeline}</h4>${policyTimeline(p)}</div>
+  </div>
+ </div>`;
+};
+
+function policyMatches(p){
+ const q=state.polSearch.trim().toLowerCase();
+ if(q && !(mkt(p).toLowerCase().includes(q)||p.id.toLowerCase().includes(q))) return false;
+ if(state.polFilter!=='all' && bucketOf(p)!==state.polFilter) return false;
+ return true;
+}
+function portfolioInner(){
+ const t=L();
+ const groups=[
+   {key:'paying',gt:t.gPaying},
+   {key:'paid',gt:t.gPaid},
+   {key:'covered',gt:t.gCovered},
+   {key:'nopay',gt:t.gNopay}
+ ];
+ const matched=POLICIES.filter(policyMatches);
+ if(!matched.length){
+   const q=state.polSearch.trim()||state.polFilter!=='all';
+   return `<div class="empty2"><div class="e-ic">${svg(q?I.search:I.empty,20)}</div>
+     <div class="e-t">${q?t.noMatch:t.emptyPoliciesT}</div>
+     <div class="e-d">${q?t.noMatchD:t.emptyPoliciesD}</div>
+     ${q?`<button class="btn btn-ghost btn-sm" data-act="pol-clear">${t.clearFilters}</button>`
+        :`<button class="btn btn-primary btn-sm" data-act="nav" data-view="insurance">${t.emptyPoliciesBtn}</button>`}</div>`;
+ }
+ let html='';
+ groups.forEach(g=>{
+   const list=matched.filter(p=>bucketOf(p)===g.key);
+   if(!list.length) return;
+   const sum=list.reduce((s,p)=>s+p.a,0);
+   html+=`<div class="pf-grouphdr">
+     <span class="gh-t">${g.gt}</span>
+     <span class="gh-c">${list.length}</span>
+     <span class="gh-line"></span>
+     <span class="gh-sum">${money(sum)} USDC</span>
+   </div><div class="pledger">`;
+   list.forEach(p=>{
+     const released=releasedOf(p),claimable=claimableOf(p);
+     const pc=released/p.a*100;
+     let fig='',bar='';
+     if(g.key==='paying'){
+       fig=`<div class="fk">${t.claimable}</div><div class="fv sig">${money(claimable)}<span class="fu">USDC</span></div>`;
+       bar=`<div class="prow-bar"><div class="pbar"><i style="width:${pc.toFixed(0)}%"></i></div>
+         <span class="pbt">${money(released)} / ${money(p.a)} · ${pc.toFixed(0)}%</span></div>`;
+     }else if(g.key==='paid'){
+       fig=`<div class="fk">${t.recovered}</div><div class="fv">${money(p.a)}<span class="fu">USDC</span></div>`;
+       bar=`<div class="prow-bar"><div class="pbar"><i style="width:100%"></i></div>
+         <span class="pbt">100% ${t.releasedLc}</span></div>`;
+     }else if(g.key==='covered'){
+       fig=`<div class="fk">${t.coverageCol}</div><div class="fv">${money(p.a)}<span class="fu">USDC</span></div>`;
+     }else{
+       fig=`<div class="fk">${t.premiumKept}</div><div class="fv">${money(p.premium)}<span class="fu">USDC</span></div>`;
+     }
+     html+=`<div class="prow s-${g.key}" data-act="policy" data-id="${p.id}">
+       <div class="prow-main">
+         <div class="prow-top">
+           <span class="prow-id">${p.id}</span>${statusBadge(p.status)}
+         </div>
+         <div class="prow-mkt">${mkt(p)}</div>
+         <div class="prow-meta">
+           <span class="tag">${cat(p)}</span>
+           <span class="tag">${opt(p)}</span>
+           <span class="tag">${t.principal} ${money(p.a)}</span>
+         </div>
+       </div>
+       <div class="prow-fig">${fig}</div>
+       ${bar}
+     </div>`;
+   });
+   html+=`</div>`;
+ });
+ return html;
+}
+function activityFeed(){
+ const t=L();
+ if(!ACTIVITY.length) return '';
+ const icon={mint:I.shield,claim:I.arrow,void:I.empty};
+ const label={mint:t.actMint,claim:t.actClaim,void:t.actVoid};
+ const rows=ACTIVITY.slice(0,6).map(a=>{
+   const cls=a.type==='claim'?'a-in':a.type==='mint'?'a-out':'';
+   const amt=a.type==='claim'?`<span class="av pos">+${money(a.amt)}</span>`
+     :a.type==='mint'?`<span class="av neg">−${money(a.amt)}</span>`
+     :`<span class="av neg">—</span>`;
+   const m=state.lang==='zh'?a.mkt.mZh:a.mkt.mEn;
+   return `<div class="actrow ${cls}">
+     <span class="aic">${svg(icon[a.type],14)}</span>
+     <div><div class="at">${label[a.type]} · ${a.id}</div>
+       <div class="ad">${m.length>42?m.slice(0,42)+'…':m} · ${t.daysAgoShort(a.ago)}</div></div>
+     ${amt}</div>`;
+ }).join('');
+ return `<div class="pf-grouphdr"><span class="gh-t">${t.activityTitle}</span>
+   <span class="gh-c">${ACTIVITY.length}</span><span class="gh-line"></span></div>
+   <div class="actfeed">${rows}</div>`;
+}
+function portfolioOverview(){
+ const t=L();
+ const totalPrincipal=POLICIES.reduce((s,p)=>s+p.a,0);
+ const covered=POLICIES.filter(p=>p.status==='releasing'||p.status==='completed').reduce((s,p)=>s+p.a,0);
+ const claimed=POLICIES.reduce((s,p)=>s+(p.claimed||0),0);
+ const claimable=POLICIES.reduce((s,p)=>s+claimableOf(p),0);
+ const rel=POLICIES.filter(p=>p.status==='releasing'||p.status==='completed');
+ const relReleased=rel.reduce((s,p)=>s+releasedOf(p),0);
+ const relTotal=rel.reduce((s,p)=>s+p.a,0);
+ const relPct=relTotal?relReleased/relTotal*100:0;
+ const cnt=POLICIES.filter(p=>claimableOf(p)>0).length;
+ const activeCnt=POLICIES.filter(p=>p.status==='active').length;
+ const U=`<span class="u">USDC</span>`;
+ return `
+   <div class="ov-lbl">${t.ovTitle}</div>
+   <div class="pf-hero">
+     <div class="pf-hero-grid">
+       <div class="pf-hcell lead">
+         <div class="pf-k">${t.totalPrincipal}</div>
+         <div class="pf-num">${money(totalPrincipal)}${U}</div>
+         <div class="pf-sub">${t.acrossN(POLICIES.length)}</div>
+       </div>
+       <div class="pf-hcell">
+         <div class="pf-k">${t.underCover}</div>
+         <div class="pf-num">${money(covered)}</div>
+         <div class="pf-sub">${t.activeN(activeCnt)}</div>
+       </div>
+       <div class="pf-hcell">
+         <div class="pf-k">${t.claimedPayout}</div>
+         <div class="pf-num">${money(claimed)}</div>
+         <div class="pf-sub">${relTotal>0?money(relReleased)+' '+t.releasedLc:'—'}</div>
+       </div>
+       <div class="pf-hcell ${claimable>0?'is-claim':''}">
+         <div class="pf-k">${t.unclaimedPayout}</div>
+         <div class="pf-num ${claimable>0?'sig':''}">${money(claimable)}</div>
+         <div class="pf-sub">${cnt>0?t.acrossPolicies(cnt):'—'}</div>
+       </div>
+     </div>
+     ${relTotal>0?`<div class="pf-rel">
+       <span class="pf-rel-meta">${t.principalRelease}</span>
+       <div class="pf-rel-bar"><i style="width:${relPct.toFixed(1)}%"></i></div>
+       <span class="pf-rel-fig"><b>${money(relReleased)}</b> / ${money(relTotal)} USDC</span>
+       <span class="pf-rel-pct">${relPct.toFixed(1)}%</span>
+       ${claimable>0?`<button class="btn btn-primary btn-sm" data-act="batch">${t.claimAll} · ${money(claimable)} USDC</button>`:''}
+     </div>`:''}
+   </div>`;
+}
+
+function policyListHtml(){
+ return `<div id="policies-list">${portfolioInner()}</div>`;
+}
+views.portfolio=()=>{
+ const t=L();
+ const filters=[['all',t.filterAll],['paying',t.gPaying],['covered',t.gCovered],['paid',t.gPaid],['nopay',t.gNopay]];
+ const hasAny=POLICIES.length>0;
+ const bar=hasAny?`<div class="listbar">
+     <div class="lb-search">${svg(I.search,15)}
+       <input type="text" id="pol-search" placeholder="${t.searchPh}" value="${state.polSearch}" autocomplete="off">
+     </div>
+     ${filters.map(f=>`<button class="fbtn ${state.polFilter===f[0]?'on':''}" data-act="pol-filter" data-f="${f[0]}">${f[1]}</button>`).join('')}
+   </div>`:'';
+ return `<div class="page wrap">
+   <div class="page-head rise">
+     <div class="pagetitle">${t.pfTitle}</div>
+     <p class="pagesub">${t.pfSub}</p>
+   </div>
+   <div class="rise-2" style="margin-bottom:28px;">${portfolioOverview()}</div>
+   <div class="rise-2">${bar}${policyListHtml()}</div>
+   ${ACTIVITY.length?`<div class="rise-3" style="margin-top:8px;">${activityFeed()}</div>`:''}
+ </div>`;
+};
+
+/* gated wrapper for pre-login Insurance / Portfolio
+   — background shows page structure + skeletons only, never fabricated data */
+function skelRows(n){
+ let h='';
+ for(let i=0;i<n;i++){
+   h+=`<div class="skel-row">
+     <div class="sk-main">
+       <div class="skel skel-line" style="width:34%"></div>
+       <div class="skel skel-line" style="width:72%;height:14px"></div>
+       <div class="skel skel-line" style="width:50%"></div>
+     </div>
+     <div class="sk-end">
+       <div class="skel skel-line" style="width:54px;height:9px"></div>
+       <div class="skel skel-line" style="width:78px;height:18px"></div>
+     </div>
+   </div>`;
+ }
+ return h;
+}
+function gatedInsurance(){
+ const t=L();
+ const sorts=[['closes',t.sortClosesSoon],['premiumLo',t.sortPremiumLo],['premiumHi',t.sortPremiumHi],['principalHi',t.sortPrincipalHi]];
+ return `<div class="page wrap">
+   <div class="page-head">
+     <div class="pagetitle">${t.insureTitle}</div>
+     <p class="pagesub">${t.insureSub}</p>
+     <div class="paramline"><span><b>${t.pfloor}</b> ${pct(F)}</span><span><b>${t.pperiod}</b> ${RELEASE_DAYS}d ${t.linear}</span></div>
+   </div>
+   <div class="listbar">
+     <div class="lb-search">${svg(I.search,15)}
+       <input type="text" placeholder="${t.searchPh}" disabled>
+     </div>
+     <select class="sortsel" disabled>
+       ${sorts.map(s=>`<option>${s[1]}</option>`).join('')}
+     </select>
+   </div>
+   <div>${skelRows(4)}</div>
+ </div>`;
+}
+function gatedPortfolio(){
+ const t=L();
+ const cell=lead=>`<div class="skel-dash-cell ${lead?'lead':''}">
+   <div class="skel skel-line" style="width:${lead?'58%':'70%'};height:9px"></div>
+   <div class="skel skel-line" style="width:${lead?'74%':'52%'};height:${lead?'24px':'20px'}"></div>
+   <div class="skel skel-line" style="width:46%;height:9px"></div>
+ </div>`;
+ return `<div class="page wrap">
+   <div class="page-head">
+     <div class="pagetitle">${t.pfTitle}</div>
+     <p class="pagesub">${t.pfSub}</p>
+   </div>
+   <div class="ov-lbl">${t.ovTitle}</div>
+   <div class="skel-dash">
+     <div class="skel-dash-grid">
+       ${cell(true)}${cell(false)}${cell(false)}${cell(false)}
+     </div>
+     <div class="skel-dash-bar">
+       <div class="skel skel-line" style="width:90px;height:9px"></div>
+       <div class="skel skel-line" style="flex:1;height:6px"></div>
+       <div class="skel skel-line" style="width:70px;height:9px"></div>
+     </div>
+   </div>
+   <div>${skelRows(3)}</div>
+ </div>`;
+}
+function gated(view){
+ const t=L();
+ const inner=view==='insurance'?gatedInsurance():gatedPortfolio();
+ return `<div class="gate">
+   <div class="gate-blur" aria-hidden="true">${inner}</div>
+   <div class="gate-veil">
+     <div class="gate-card">
+       <div class="gi">${svg(I.lock,22)}</div>
+       <div style="font-family:var(--mono);font-size:11px;color:var(--text-3);letter-spacing:0.06em;margin-bottom:6px;">${t.previewNote}</div>
+       <h3>${t.gateT}</h3>
+       <p>${t.gateP}</p>
+       <button class="btn btn-primary btn-block" data-act="connect">${t.gateBtn}</button>
+     </div>
+   </div>
+ </div>`;
+}
+
+/* ============ render ============ */
+function skeletonFor(v){
+ const rows=n=>Array.from({length:n}).map(()=>
+   `<div class="skel-row"><div class="skel skel-line" style="width:30%"></div>
+     <div class="skel skel-line" style="width:62%;height:15px"></div>
+     <div class="skel skel-line" style="width:45%"></div></div>`).join('');
+ if(v==='portfolio'){
+   return `<div class="page wrap"><div class="page-head">
+     <div class="skel skel-line" style="width:160px;height:22px"></div>
+     <div class="skel skel-line" style="width:60%;margin-top:10px"></div></div>
+     <div class="skel" style="height:120px;border-radius:3px;margin-bottom:22px"></div>
+     ${rows(4)}</div>`;
+ }
+ return `<div class="page wrap"><div class="page-head">
+   <div class="skel skel-line" style="width:140px;height:22px"></div>
+   <div class="skel skel-line" style="width:55%;margin-top:10px"></div></div>
+   ${rows(4)}</div>`;
+}
+let renderToken=0;
+function initFlow(){
+ const flow=$('#flow');
+ if(!flow) return;
+ if(!('IntersectionObserver' in window)){ flow.classList.add('lit'); return; }
+ const io=new IntersectionObserver((entries,obs)=>{
+   entries.forEach(en=>{
+     if(en.isIntersecting){ flow.classList.add('lit'); obs.disconnect(); }
+   });
+ },{threshold:0.4});
+ io.observe(flow);
+}
+/* count-up: animates the numeric part of a string, keeping prefix/suffix */
+function countUp(el){
+ const target=el.dataset.count||'';
+ const m=target.match(/^([^\d]*)([\d,.]+)(.*)$/);
+ if(!m){ return; }
+ const prefix=m[1], suffix=m[3];
+ const clean=m[2].replace(/,/g,'');
+ const end=parseFloat(clean);
+ if(isNaN(end)){ return; }
+ const decimals=(clean.split('.')[1]||'').length;
+ const grouped=m[2].indexOf(',')>-1;
+ const dur=1100, t0=performance.now();
+ const fmt=v=>{
+   let s=v.toFixed(decimals);
+   if(grouped) s=parseFloat(s).toLocaleString('en-US',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});
+   return prefix+s+suffix;
+ };
+ const tick=now=>{
+   const p=Math.min((now-t0)/dur,1);
+   const eased=1-Math.pow(1-p,3);
+   el.textContent=fmt(end*eased);
+   if(p<1) requestAnimationFrame(tick);
+   else el.textContent=target;
+ };
+ requestAnimationFrame(tick);
+}
+function initHomeReveal(){
+ const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const sections=document.querySelectorAll('.reveal');
+ if(reduce||!('IntersectionObserver' in window)){
+   sections.forEach(s=>s.classList.add('seen'));
+   document.querySelectorAll('[data-count]').forEach(el=>{el.textContent=el.dataset.count;});
+   return;
+ }
+ const io=new IntersectionObserver((entries,obs)=>{
+   entries.forEach(en=>{
+     if(en.isIntersecting){
+       en.target.classList.add('seen');
+       en.target.querySelectorAll('[data-count]').forEach(el=>countUp(el));
+       obs.unobserve(en.target);
+     }
+   });
+ },{threshold:0.18,rootMargin:'0px 0px -8% 0px'});
+ sections.forEach(s=>io.observe(s));
+}
+function render(){
+ document.documentElement.lang=state.lang==='zh'?'zh-CN':'en';
+ renderNav();
+ let v=state.view;
+ if(v==='dashboard'){ v=state.view='portfolio'; }
+ const dataPage=(v==='insurance'||v==='portfolio')&&state.connected;
+ const my=++renderToken;
+ const paint=()=>{
+   if(my!==renderToken) return;
+   let html;
+   if((v==='insurance'||v==='portfolio')&&!state.connected){ html=gated(v); }
+   else { html=(views[v]||views.home)(); }
+   $('#view').innerHTML=html;
+   if(v==='policy') setTimeout(initCurve,30);
+   if(v==='home'){ setTimeout(()=>{initFlow();initHomeReveal();},40); }
+ };
+ if(dataPage&&!state._skipSkel){
+   $('#view').innerHTML=skeletonFor(v);
+   window.scrollTo(0,0);
+   setTimeout(paint,420);
+ }else{
+   state._skipSkel=false;
+   paint();
+   window.scrollTo(0,0);
+ }
+}
+
+/* ============ overlay / toast ============ */
+function walletModal(){
+ const t=L();
+ const opt=(name,desc,bg,letter)=>`<button class="wallet-opt" data-act="pick-wallet" data-name="${name}">
+   <span class="ic" style="background:${bg};">${letter}</span>
+   <span><span class="wn">${name}</span><br><span class="wd">${desc}</span></span>
+   <span class="arr">${svg(I.arrow,16)}</span></button>`;
+ $('#layer').innerHTML=`<div class="overlay" data-act="close-overlay"><div class="modal" data-stop>
+   <div class="modal-h"><h3>${t.walletModalT}</h3><p>${t.walletModalP}</p></div>
+   <div class="modal-b">
+     ${opt('MetaMask',t.extension,'#E2761B','M')}
+     ${opt('Rabby',t.extension,'#5577FF','R')}
+     ${opt('WalletConnect',t.scanMobile,'#2E3B4E','W')}
+   </div></div></div>`;
+}
+function errorModal(title,msg){
+ const t=L();
+ $('#layer').innerHTML=`<div class="overlay" data-act="close-overlay"><div class="modal" data-stop>
+   <div class="modal-h"><h3>${title}</h3></div>
+   <div class="modal-b">
+     <div class="errbox">${msg}</div>
+     <button class="btn btn-ghost btn-block" style="margin-top:14px;" data-act="close-overlay">${t.dismiss}</button>
+   </div></div></div>`;
+}
+function statusModal(msg,sub){
+ $('#layer').innerHTML=`<div class="overlay"><div class="modal" data-stop>
+   <div class="modal-status"><div class="spinner"></div>
+   <h3 style="font-size:16px;font-weight:600;">${msg}</h3>
+   <p style="font-size:13px;color:var(--text-2);margin-top:5px;">${sub||''}</p></div></div></div>`;
+}
+function clearLayer(){$('#layer').innerHTML='';}
+let toastT;
+function toast(msg,opts){
+ opts=opts||{};
+ const el=$('#toast');
+ $('#toast-msg').textContent=msg;
+ const sub=$('#toast-sub'), link=$('#toast-link');
+ sub.textContent=opts.sub||'';
+ sub.style.display=opts.sub?'':'none';
+ el.className='toast'+(opts.kind?' t-'+opts.kind:'');
+ link.style.display='none';
+ el.classList.add('show');
+ clearTimeout(toastT);
+ toastT=setTimeout(()=>el.classList.remove('show'),opts.long?4200:3000);
+}
+
+/* ============ actions ============ */
+function connectWallet(name){
+ const t=L();
+ statusModal(t.cwTitle(name),t.approveConn);
+ setTimeout(()=>{
+   state.connected=true;
+   state.view=(state.pendingView&&state.pendingView!=='home')?state.pendingView:'insurance';
+   state.pendingView=null;
+   clearLayer();render();
+   toast(t.connected(name),{kind:'info',sub:state.address});
+ },1100);
+}
+function pay(){
+ const t=L();
+ const o=ORDERS.find(x=>x.id===state.selectedOrder);
+ if(!o) return;
+ const pr=premiumOf(o.a,kOf(o));
+ if(pr.payable>state.balance){
+   errorModal(t.errInsufTitle,t.errInsufMsg(money(pr.payable),money(state.balance)));
+   return;
+ }
+ statusModal(t.minting,t.mintingSub);
+ setTimeout(()=>{
+   state.balance-=pr.payable;
+   const id='CF-00'+(polCounter++);
+   POLICIES.unshift({id,order:o.id,catEn:o.catEn,catZh:o.catZh,mEn:o.mEn,mZh:o.mZh,optEn:o.optEn,optZh:o.optZh,a:o.a,k:kOf(o),premium:pr.payable,status:'active',mintedDaysAgo:0});
+   ACTIVITY.unshift({type:'mint',id,amt:pr.payable,mkt:{mEn:o.mEn,mZh:o.mZh},ago:0});
+   const idx=ORDERS.findIndex(x=>x.id===o.id);if(idx>-1)ORDERS.splice(idx,1);
+   state.selectedOrder=null;state.policyId=id;state.view='policy';
+   clearLayer();render();toast(t.minted(id),{kind:'info'});
+ },1200);
+}
+function claim(id){
+ const t=L();
+ const p=POLICIES.find(x=>x.id===id);const c=claimableOf(p);
+ if(c<=0) return;
+ statusModal(t.claimingT,t.claimingSub);
+ setTimeout(()=>{
+   p.claimed=releasedOf(p);
+   if(p.claimed>=p.a-0.01)p.status='completed';
+   state.balance+=c;
+   ACTIVITY.unshift({type:'claim',id:p.id,amt:c,mkt:{mEn:p.mEn,mZh:p.mZh},ago:0});
+   clearLayer();render();toast(t.claimedToast(money(c)),{kind:'info'});
+ },1050);
+}
+function batchClaim(){
+ const t=L();
+ const total=POLICIES.reduce((s,p)=>s+claimableOf(p),0);
+ if(total<=0) return;
+ const n=POLICIES.filter(p=>claimableOf(p)>0).length;
+ statusModal(t.batchT,t.batchSub);
+ setTimeout(()=>{
+   POLICIES.forEach(p=>{if(claimableOf(p)>0){
+     const c=claimableOf(p);
+     p.claimed=releasedOf(p);if(p.claimed>=p.a-0.01)p.status='completed';
+     ACTIVITY.unshift({type:'claim',id:p.id,amt:c,mkt:{mEn:p.mEn,mZh:p.mZh},ago:0});
+   }});
+   state.balance+=total;clearLayer();render();
+   toast(t.claimedBatch(money(total)),{kind:'info',sub:t.batchDone(n)});
+ },1200);
+}
+
+/* ============ events ============ */
+function refreshOrders(){
+ const t=L();
+ const lst=$('#orders-list'), cnt=$('#ord-count');
+ if(lst) lst.innerHTML=ordersListHtml();
+ if(cnt) cnt.textContent=t.resultCount(filteredOrders().length);
+}
+function refreshPolicies(){
+ const lst=$('#policies-list');
+ if(lst) lst.innerHTML=portfolioInner();
+ document.querySelectorAll('[data-act="pol-filter"]').forEach(b=>{
+   b.classList.toggle('on',b.dataset.f===state.polFilter);
+ });
+}
+document.addEventListener('click',e=>{
+ const stop=e.target.closest('[data-stop]');
+ const el=e.target.closest('[data-act]');
+ if(!el){ return; }
+ const act=el.dataset.act;
+ if(act==='connect'){ state.drawer=false; state.pendingView=state.view; walletModal(); }
+ else if(act==='pick-wallet'){ connectWallet(el.dataset.name); }
+ else if(act==='close-overlay'){ if(!stop) clearLayer(); }
+ else if(act==='drawer-close'){ if(!stop){ state.drawer=false;renderDrawer(); } }
+ else if(act==='disconnect'){ state.connected=false;state.view='home';state.drawer=false;render();toast(L().disconnected); }
+ else if(act==='nav'){ state.view=el.dataset.view;state.drawer=false;render(); }
+ else if(act==='drawer'){ state.drawer=!state.drawer;renderDrawer(); }
+ else if(act==='lang'){ state.lang=el.dataset.lang;state._skipSkel=true;render(); }
+ else if(act==='settheme'){
+   state.theme=el.dataset.theme;
+   state.themeManual=true;
+   document.body.setAttribute('data-theme',state.theme);
+   renderNav();
+ }
+ else if(act==='anchor'){
+   state.drawer=false;
+   const go=()=>{const tg=document.getElementById(el.dataset.anchor);if(tg)tg.scrollIntoView({behavior:'smooth',block:'start'});};
+   if(state.view!=='home'){state.view='home';render();setTimeout(go,70);}else{renderDrawer();go();}
+ }
+ else if(act==='faq'){ el.classList.toggle('open'); }
+ else if(act==='insure'){ state.selectedOrder=el.dataset.id;state.view='purchase';render(); }
+ else if(act==='pay'){ pay(); }
+ else if(act==='policy'){ state.policyId=el.dataset.id;state.view='policy';render(); }
+ else if(act==='claim'){ claim(el.dataset.id); }
+ else if(act==='batch'){ batchClaim(); }
+ else if(act==='ord-clear'){ state.ordSearch='';state.ordSort='closes';state._skipSkel=true;render(); }
+ else if(act==='pol-clear'){ state.polSearch='';state.polFilter='all';refreshPolicies();
+   const s=$('#pol-search');if(s)s.value=''; }
+ else if(act==='pol-filter'){ state.polFilter=el.dataset.f;refreshPolicies(); }
+});
+document.addEventListener('input',e=>{
+ if(e.target.id==='ord-search'){ state.ordSearch=e.target.value;refreshOrders(); }
+ else if(e.target.id==='pol-search'){ state.polSearch=e.target.value;refreshPolicies(); }
+});
+document.addEventListener('change',e=>{
+ if(e.target.id==='ord-sort'){ state.ordSort=e.target.value;refreshOrders(); }
+});
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'){
+   if($('#layer').innerHTML){ clearLayer(); }
+   else if(state.drawer){ state.drawer=false;renderDrawer(); }
+ }
+});
+let liveT=3;
+setInterval(()=>{
+ const el=$('#live-ts');
+ if(el){ liveT=liveT>=9?3:liveT+3; el.textContent=L().liveUpdated(liveT); }
+},3000);
+
+render();
+</script>
+</body>
+</html>

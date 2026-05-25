@@ -1,26 +1,176 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Design tokens — names match prototype 1:1.
+   Three explicit theme states; each fully defined to remove any
+   reliance on a "default = dark" implicit fallback.
+   ============================================================ */
+
+/* Brand + shape + motion tokens (theme-invariant). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --signal: #5577ff;
+  --signal-2: #7c97ff;
+  --good: #3fb079;
+  --good-2: #5ec795;
+  --bad: #e0564f;
+  --warn: #d9963f;
+  --bad-soft: rgba(224, 86, 79, 0.13);
+  --warn-soft: rgba(217, 150, 63, 0.14);
+
+  --sans: var(--font-plex-sans), "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --r-s: 2px;
+  --r-m: 3px;
+  --r-l: 4px;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
+/* Dark palette — applied both as the implicit default (`:root`) AND when
+   `data-theme="dark"` is explicit, so SSR/no-JS and explicit-dark match. */
+:root,
+:root[data-theme="dark"] {
+  --ink: #08080a;
+  --surface: #101013;
+  --surface-2: #16161a;
+  --surface-3: #1d1d22;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --line-3: rgba(255, 255, 255, 0.22);
+  --text: #f0f0f2;
+  --text-2: #9b9ba3;
+  --text-3: #5e5e67;
+  --signal-soft: rgba(85, 119, 255, 0.12);
+  --good-soft: rgba(63, 176, 121, 0.13);
+  --glow: rgba(85, 119, 255, 0.07);
+  --hairtex: rgba(255, 255, 255, 0.012);
+  --header-bg: rgba(8, 8, 10, 0.82);
+  --overlay-bg: rgba(5, 5, 7, 0.8);
+}
+
+/* Light palette — overrides the dark defaults when `data-theme="light"`. */
+:root[data-theme="light"] {
+  --ink: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f6f7f9;
+  --surface-3: #edeef1;
+  --line: rgba(17, 18, 26, 0.13);
+  --line-2: rgba(17, 18, 26, 0.2);
+  --line-3: rgba(17, 18, 26, 0.34);
+  --text: #14151a;
+  --text-2: #565862;
+  --text-3: #8a8c96;
+  --signal-soft: rgba(85, 119, 255, 0.09);
+  --good-soft: rgba(45, 150, 100, 0.11);
+  --glow: rgba(85, 119, 255, 0.05);
+  --hairtex: rgba(17, 18, 26, 0.022);
+  --header-bg: rgba(255, 255, 255, 0.88);
+  --overlay-bg: rgba(20, 21, 26, 0.42);
+}
+
+/* ============================================================
+   Tailwind theme bridge — exposes our CSS vars as utilities:
+   bg-ink / bg-surface / bg-surface-2 / bg-surface-3
+   border-line / border-line-2 / border-line-3
+   text-text / text-text-2 / text-text-3
+   text-signal / text-signal-2 / bg-signal-soft
+   text-good / bg-good-soft   text-bad / bg-bad-soft   text-warn / bg-warn-soft
+   rounded-s / rounded-m / rounded-l   font-sans / font-mono
+   ============================================================ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-ink: var(--ink);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-line-3: var(--line-3);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-signal: var(--signal);
+  --color-signal-2: var(--signal-2);
+  --color-signal-soft: var(--signal-soft);
+  --color-good: var(--good);
+  --color-good-2: var(--good-2);
+  --color-good-soft: var(--good-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+
+  --radius-s: var(--r-s);
+  --radius-m: var(--r-m);
+  --radius-l: var(--r-l);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ============================================================
+   Base resets + page background.
+
+   Background is painted on BOTH <html> and <body>:
+   - <html> paints the viewport "canvas" — survives any case where
+     <body> doesn't extend to the full viewport.
+   - <body> paints itself for in-flow content.
+   Both reference --ink, which switches via :root[data-theme="..."].
+   ============================================================ */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  background-color: var(--ink);
+  color: var(--text);
+  transition: background-color 0.3s var(--ease), color 0.3s var(--ease);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.3s var(--ease), color 0.3s var(--ease);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(900px 480px at 78% -8%, var(--glow), transparent 70%);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+::selection {
+  background-color: rgba(85, 119, 255, 0.3);
+}
+
+.mono {
+  font-family: var(--mono);
 }
