@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { network } from "hardhat";
-import { getAddress, keccak256, parseUnits, toHex } from "viem";
+import { getAddress, keccak256, parseUnits, toHex, zeroAddress } from "viem";
 
 /**
  * CoverFiPolicy — B2 (constructor + roles + setQ) and B3 (quotePremium
@@ -150,6 +150,44 @@ describe("CoverFiPolicy", async function () {
           10_001n,
         ]),
         /InvalidQBps/,
+      );
+    });
+
+    it("reverts when _usdc is the zero address", async function () {
+      await assert.rejects(
+        viem.deployContract("CoverFiPolicy", [
+          zeroAddress,
+          admin.account.address,
+          settler.account.address,
+          5000n,
+        ]),
+        /ZeroAddress/,
+      );
+    });
+
+    it("reverts when _admin is the zero address", async function () {
+      const usdc = await viem.deployContract("MockUSDC");
+      await assert.rejects(
+        viem.deployContract("CoverFiPolicy", [
+          usdc.address,
+          zeroAddress,
+          settler.account.address,
+          5000n,
+        ]),
+        /ZeroAddress/,
+      );
+    });
+
+    it("reverts when _settler is the zero address", async function () {
+      const usdc = await viem.deployContract("MockUSDC");
+      await assert.rejects(
+        viem.deployContract("CoverFiPolicy", [
+          usdc.address,
+          admin.account.address,
+          zeroAddress,
+          5000n,
+        ]),
+        /ZeroAddress/,
       );
     });
   });
@@ -1328,6 +1366,121 @@ describe("CoverFiPolicy", async function () {
         assert.equal(policyAfter[8], 0n); // claimed still 0
         assert.equal(policyAfter[1], Status.Releasing);
       });
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // rescueToken — DEFAULT_ADMIN_ROLE escape hatch (Phase C addition).
+  //
+  // Includes the protocol's own `usdc` on purpose: see contract
+  // NatSpec + AUDIT.md. Centralization mitigation = mainnet admin
+  // MUST be a multisig.
+  // ────────────────────────────────────────────────────────────────
+  describe("rescueToken", async function () {
+    it("admin can rescue the protocol's own USDC", async function () {
+      const { usdc, coverFi } = await deploy();
+      // Pre-fund the contract with some USDC (simulates project-side
+      // payout-pool deposit per PRD §8.2).
+      await usdc.write.mint([coverFi.address, USDC(50_000)]);
+
+      const recipient = bob.account.address;
+      const recipientBefore = await usdc.read.balanceOf([recipient]);
+
+      const coverFiAsAdmin = await viem.getContractAt(
+        "CoverFiPolicy",
+        coverFi.address,
+        { client: { wallet: admin } },
+      );
+
+      await viem.assertions.emitWithArgs(
+        coverFiAsAdmin.write.rescueToken([
+          usdc.address,
+          recipient,
+          USDC(30_000),
+        ]),
+        coverFi,
+        "TokenRescued",
+        [getAddress(usdc.address), getAddress(recipient), USDC(30_000)],
+      );
+
+      assert.equal(
+        await usdc.read.balanceOf([recipient]),
+        recipientBefore + USDC(30_000),
+      );
+      assert.equal(
+        await usdc.read.balanceOf([coverFi.address]),
+        USDC(20_000),
+      );
+    });
+
+    it("admin can rescue an unrelated ERC20 (e.g. airdropped to the contract)", async function () {
+      const { coverFi } = await deploy();
+      // Deploy a SECOND MockUSDC, mint to the protocol contract —
+      // simulates a stranger sending random tokens to the contract.
+      const other = await viem.deployContract("MockUSDC");
+      await other.write.mint([coverFi.address, USDC(7_500)]);
+
+      const coverFiAsAdmin = await viem.getContractAt(
+        "CoverFiPolicy",
+        coverFi.address,
+        { client: { wallet: admin } },
+      );
+
+      await coverFiAsAdmin.write.rescueToken([
+        other.address,
+        bob.account.address,
+        USDC(7_500),
+      ]);
+
+      assert.equal(
+        await other.read.balanceOf([bob.account.address]),
+        USDC(7_500),
+      );
+      assert.equal(await other.read.balanceOf([coverFi.address]), 0n);
+    });
+
+    it("non-admin caller is rejected (AccessControl)", async function () {
+      const { usdc, coverFi } = await deploy();
+      await usdc.write.mint([coverFi.address, USDC(1_000)]);
+
+      const coverFiAsAttacker = await viem.getContractAt(
+        "CoverFiPolicy",
+        coverFi.address,
+        { client: { wallet: attacker } },
+      );
+      const DEFAULT_ADMIN_ROLE = await coverFi.read.DEFAULT_ADMIN_ROLE();
+
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        coverFiAsAttacker.write.rescueToken([
+          usdc.address,
+          attacker.account.address,
+          USDC(500),
+        ]),
+        coverFi,
+        "AccessControlUnauthorizedAccount",
+        [getAddress(attacker.account.address), DEFAULT_ADMIN_ROLE],
+      );
+    });
+
+    it("reverts when `to` is the zero address", async function () {
+      const { usdc, coverFi } = await deploy();
+      await usdc.write.mint([coverFi.address, USDC(1_000)]);
+
+      const coverFiAsAdmin = await viem.getContractAt(
+        "CoverFiPolicy",
+        coverFi.address,
+        { client: { wallet: admin } },
+      );
+
+      await viem.assertions.revertWithCustomError(
+        coverFiAsAdmin.write.rescueToken([
+          usdc.address,
+          zeroAddress,
+          USDC(500),
+        ]),
+        coverFi,
+        "ZeroAddress",
+      );
     });
   });
 });

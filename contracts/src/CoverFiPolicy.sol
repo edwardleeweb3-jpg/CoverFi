@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity 0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -8,13 +8,17 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 
 /// @title CoverFiPolicy
 /// @notice Principal insurance on Signa prediction-market orders.
-///         This file is the B2 skeleton — storage, roles, constructor,
-///         setQ admin action, and event placeholders. The business
-///         actions (buyPolicy / triggerSettlement / claim) land in
-///         Phases B3 / B4 / B5.
-/// @dev    All economic math here is bps-based integer arithmetic to
-///         satisfy PRD §3.2's "no floats for money" rule. Q, k, F are
-///         stored / passed as basis points out of `BPS_DENOMINATOR`.
+///         Users `buyPolicy` against a Signa order; on a Miss settlement
+///         the policy enters 365-day linear payout claimable via
+///         `claim`; on Hit the premium is retained; on Void the premium
+///         is refunded. See `AUDIT.md` for the v1 trust model and the
+///         items deferred past mainnet.
+/// @dev    All economic math is bps-based integer arithmetic per
+///         PRD §3.2's "no floats for money" rule. Q, k, F are stored
+///         and passed in basis points out of `BPS_DENOMINATOR`.
+///         Admin-tunable Q lives on-chain; existing policies snapshot
+///         their premium at mint time and are immune to later Q
+///         changes.
 contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -156,6 +160,10 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///         but not enough time has elapsed since the last claim.
     error NothingToClaim(uint256 policyId);
 
+    /// @notice Thrown when a constructor parameter or `rescueToken`
+    ///         recipient is the zero address.
+    error ZeroAddress();
+
     // ─── Events ──────────────────────────────────────────────────
 
     /// @notice Emitted on every successful `buyPolicy`. `option` is the
@@ -206,6 +214,15 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///         set in the constructor (oldQBps = 0 in that case).
     event QUpdated(uint256 oldQBps, uint256 newQBps, address indexed admin);
 
+    /// @notice Emitted when an admin rescues stuck or surplus tokens
+    ///         via `rescueToken`. `token` may be the protocol's own
+    ///         `usdc` — see `rescueToken` NatSpec.
+    event TokenRescued(
+        address indexed token,
+        address indexed to,
+        uint256 amount
+    );
+
     // ─── Constructor ─────────────────────────────────────────────
 
     /// @param _usdc         ERC20 used for premium + payout transfers.
@@ -222,6 +239,13 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
         address _settler,
         uint256 _initialQBps
     ) {
+        // Zero-address checks — once these slots are baked in (usdc is
+        // immutable; the admin/settler role grants can be revoked but
+        // not undone retroactively) there's no clean recovery, so we
+        // refuse the deploy outright.
+        if (address(_usdc) == address(0)) revert ZeroAddress();
+        if (_admin == address(0)) revert ZeroAddress();
+        if (_settler == address(0)) revert ZeroAddress();
         if (_initialQBps == 0 || _initialQBps > BPS_DENOMINATOR) {
             revert InvalidQBps(_initialQBps);
         }
@@ -541,5 +565,44 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
 
         // ─ INTERACTIONS ─
         usdc.safeTransfer(msg.sender, amount);
+    }
+
+    // ─── Admin: rescueToken ──────────────────────────────────────
+
+    /// @notice Sweep ERC20 tokens out of the contract. Used for:
+    ///         (a) draining mis-sent / airdropped tokens that aren't
+    ///         part of the protocol; (b) re-balancing or winding down
+    ///         the testnet payout pool of `usdc` itself.
+    ///
+    /// @dev    DELIBERATELY accepts `token == usdc`. The protocol's
+    ///         own USDC reserve is project-controlled (PRD §8.2 testnet
+    ///         pre-fund; mainnet solvency mechanism per PRD §9.1 is a
+    ///         separate decision). Concentrating this power on
+    ///         DEFAULT_ADMIN_ROLE means **the mainnet admin MUST be a
+    ///         multisig**, and a timelock on top is strongly
+    ///         recommended — see AUDIT.md.
+    ///
+    ///         The owner of an active policy could theoretically have
+    ///         their payout drained by a compromised / malicious
+    ///         admin. The multisig requirement is the social /
+    ///         operational mitigation; there is no on-chain
+    ///         escrow-style guard in v1.
+    ///
+    ///         `nonReentrant` matches `claim`'s defensive style — if a
+    ///         hostile rescued token tried to re-enter, the guard
+    ///         catches it. CEI: emit before transfer.
+    ///
+    /// @param token   ERC20 to sweep. Pass the protocol `usdc` to
+    ///                drain payout-pool surplus.
+    /// @param to      Recipient. Must not be the zero address.
+    /// @param amount  Amount in token base units.
+    function rescueToken(
+        IERC20 token,
+        address to,
+        uint256 amount
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
+        emit TokenRescued(address(token), to, amount);
+        token.safeTransfer(to, amount);
     }
 }
