@@ -17,8 +17,12 @@ import { pct } from "@/lib/format";
  * The blurred section uses real layout (not just a single blur image)
  * so dimensions match the unlocked page — switching to the live list
  * after connecting feels continuous.
+ *
+ * `hideCard` renders just the blur skeleton without the centered prompt.
+ * Used by gated pages during the brief pre-mount / wagmi-reconnecting
+ * window so connected users don't see a Connect-wallet prompt flash.
  */
-export function GatedView() {
+export function GatedView({ hideCard = false }: { hideCard?: boolean } = {}) {
   const t = useT();
   const openPicker = useWalletStore((s) => s.openPicker);
 
@@ -65,6 +69,7 @@ export function GatedView() {
         </div>
       </div>
 
+      {!hideCard && (
       <div className="gate-veil">
         <div className="gate-card">
           <div className="gi">
@@ -89,6 +94,7 @@ export function GatedView() {
           </Button>
         </div>
       </div>
+      )}
     </div>
   );
 }

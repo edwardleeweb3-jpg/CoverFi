@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
+import { useHasMounted } from "@/hooks/useHasMounted";
 import { useLocale, useT } from "@/hooks/useT";
 import { ORDERS } from "@/lib/mock";
 import { kOf, premiumOf } from "@/lib/pricing";
@@ -23,7 +24,8 @@ import { GatedView } from "./GatedView";
 export function InsuranceList() {
   const t = useT();
   const { lang } = useLocale();
-  const { isConnected } = useAccount();
+  const { isConnected, status } = useAccount();
+  const mounted = useHasMounted();
   const insuredOrderIds = useSimulationStore((s) => s.insuredOrderIds);
 
   const [search, setSearch] = useState("");
@@ -58,6 +60,12 @@ export function InsuranceList() {
     });
   }, [availableOrders, search, sort, lang]);
 
+  // Defer the gate decision until wagmi has finished its initial reconnect
+  // attempt — otherwise users who are in fact connected briefly see the
+  // Connect-wallet prompt before the page swaps to real content.
+  if (!mounted || status === "connecting" || status === "reconnecting") {
+    return <GatedView hideCard />;
+  }
   if (!isConnected) {
     return <GatedView />;
   }

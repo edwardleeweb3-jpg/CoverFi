@@ -3081,6 +3081,14 @@ h1.h1 {
 
   /* Review page collapses the two-column split. */
   .grid2 { grid-template-columns: 1fr; }
+
+  /* Policies overview: 4-cell hero collapses to 2x2 here (not just at
+     680px) — at tablet-portrait the 4-col layout otherwise looks cramped.
+     Matches prototype. */
+  .pf-hero-grid { grid-template-columns: 1fr 1fr; }
+  .pf-hcell:nth-child(2) { border-right: none; }
+  .pf-hcell:nth-child(1),
+  .pf-hcell:nth-child(2) { border-bottom: 1px solid var(--line); }
 }
 
 @media (max-width: 430px) {
@@ -3144,4 +3152,14 @@ h1.h1 {
   }
   .hv2-c-bar i { animation: none; width: 63%; }
   .hv2-c-dot.live { animation: none; }
+  /* HowItWorks: sequential accent lines snap to lit state without a sweep. */
+  .flow .flow-step::before { transition: none; }
+  /* /insurance live-update dot stops pulsing. */
+  .liveupd .lu-dot { animation: none; }
+  /* Modals + overlays appear/dismiss instantly. */
+  .overlay { animation: none; }
+  .modal { animation: none; }
+  .gate-card { animation: none; }
+  /* Release progress bars jump to their target width. */
+  .progress .fill { transition: none; }
 }

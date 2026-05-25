@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAccount } from "wagmi";
+import { useHasMounted } from "@/hooks/useHasMounted";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
@@ -46,7 +47,8 @@ const MINT_DELAY_MS = 1200;
 export function ReviewPage({ orderId }: Props) {
   const t = useT();
   const { lang } = useLocale();
-  const { isConnected } = useAccount();
+  const { isConnected, status } = useAccount();
+  const mounted = useHasMounted();
   const balance = useSimulationStore((s) => s.balance);
   const insuredOrderIds = useSimulationStore((s) => s.insuredOrderIds);
   const mintPolicy = useSimulationStore((s) => s.mintPolicy);
@@ -57,7 +59,11 @@ export function ReviewPage({ orderId }: Props) {
   const [errorOpen, setErrorOpen] = useState(false);
 
   // Gate before doing anything else — disconnected users see the locked
-  // preview (reused from /insurance for visual continuity).
+  // preview (reused from /insurance for visual continuity). Defer the
+  // decision until wagmi finishes its initial reconnect.
+  if (!mounted || status === "connecting" || status === "reconnecting") {
+    return <GatedView hideCard />;
+  }
   if (!isConnected) {
     return <GatedView />;
   }

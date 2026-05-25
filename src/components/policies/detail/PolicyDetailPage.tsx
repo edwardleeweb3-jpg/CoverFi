@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useAccount } from "wagmi";
+import { useHasMounted } from "@/hooks/useHasMounted";
 import { Icon } from "@/components/ui/Icon";
 import { Panel } from "@/components/ui/Panel";
 import { Spinner } from "@/components/ui/Spinner";
@@ -41,7 +42,8 @@ const CLAIM_DELAY_MS = 1050;
  */
 export function PolicyDetailPage({ policyId }: Props) {
   const t = useT();
-  const { isConnected } = useAccount();
+  const { isConnected, status } = useAccount();
+  const mounted = useHasMounted();
   const policy = useSimulationStore((s) =>
     s.policies.find((p) => p.id === policyId),
   );
@@ -50,6 +52,10 @@ export function PolicyDetailPage({ policyId }: Props) {
 
   const [busy, setBusy] = useState(false);
 
+  // Defer gate decision until wagmi settles — see InsuranceList for context.
+  if (!mounted || status === "connecting" || status === "reconnecting") {
+    return <GatedView hideCard />;
+  }
   if (!isConnected) return <GatedView />;
   if (!policy) return <NotFoundView />;
 

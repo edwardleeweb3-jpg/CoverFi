@@ -11,8 +11,12 @@ import { useWalletStore } from "@/stores/wallet";
  * pattern as /insurance — blurred dashboard skeleton + centered prompt.
  * Structure mirrors the unlocked page (hero strip + a few placeholder
  * rows) so the transition after connect feels continuous.
+ *
+ * `hideCard` renders just the blur skeleton without the prompt — used
+ * during the pre-mount / wagmi-reconnecting window so connected users
+ * never see a Connect-wallet prompt flash.
  */
-export function GatedView() {
+export function GatedView({ hideCard = false }: { hideCard?: boolean } = {}) {
   const t = useT();
   const openPicker = useWalletStore((s) => s.openPicker);
 
@@ -46,6 +50,7 @@ export function GatedView() {
         </div>
       </div>
 
+      {!hideCard && (
       <div className="gate-veil">
         <div className="gate-card">
           <div className="gi">
@@ -70,6 +75,7 @@ export function GatedView() {
           </Button>
         </div>
       </div>
+      )}
     </div>
   );
 }
