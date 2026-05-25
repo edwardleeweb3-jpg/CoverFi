@@ -2201,6 +2201,446 @@ h1.h1 {
 }
 
 /* ============================================================
+   Portfolio (My Policies) — 4-cell overview hero, release progress
+   row + Claim All, filter chips, grouped ledger with bucket-coloured
+   accent edges, activity feed, gated dashboard skeleton.
+   ============================================================ */
+
+/* "Coverage overview" mono label heading. */
+.ov-lbl {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  margin-bottom: 13px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ov-lbl::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-2);
+}
+
+/* Hero strip — 4 cells + release row. */
+.pf-hero {
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.pf-hero-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+}
+.pf-hcell {
+  padding: 15px 18px;
+  border-right: 1px solid var(--line);
+  position: relative;
+}
+.pf-hcell:last-child {
+  border-right: none;
+}
+.pf-hcell.lead {
+  background: var(--surface-2);
+}
+.pf-hcell.lead::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text-2);
+}
+.pf-hcell.is-claim::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--signal);
+}
+.pf-k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.pf-num {
+  font-family: var(--mono);
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.pf-hcell.lead .pf-num {
+  font-size: 29px;
+}
+.pf-num.sig {
+  color: var(--signal-2);
+}
+.pf-num .u {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+  margin-left: 5px;
+}
+.pf-sub {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-top: 8px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
+
+/* Release progress bar + Claim All under the hero. */
+.pf-rel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line-2);
+  flex-wrap: wrap;
+  background: var(--surface-2);
+}
+.pf-rel-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  flex: none;
+}
+.pf-rel-bar {
+  flex: 1;
+  min-width: 160px;
+  height: 6px;
+  border-radius: 0;
+  background: var(--surface-3);
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--line);
+}
+.pf-rel-bar i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--signal);
+}
+.pf-rel-fig {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.pf-rel-fig b {
+  color: var(--text);
+  font-weight: 600;
+}
+.pf-rel-pct {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--signal-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.pf-rel .btn {
+  border-radius: 2px;
+}
+
+/* Filter chip buttons. */
+.fbtn {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  padding: 0 11px;
+  height: 34px;
+  background: var(--surface);
+  transition: border-color 0.14s, background 0.14s, color 0.14s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.fbtn:hover {
+  border-color: var(--line-3);
+  color: var(--text);
+}
+.fbtn.on {
+  background: var(--signal-soft);
+  border-color: rgba(85, 119, 255, 0.4);
+  color: var(--signal-2);
+}
+
+/* Group header above each bucket's ledger. */
+.pf-grouphdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0 0;
+  padding: 7px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+}
+.pf-grouphdr .gh-t {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.pf-grouphdr .gh-c {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  padding: 0 6px;
+}
+.pf-grouphdr .gh-line {
+  flex: 1;
+}
+.pf-grouphdr .gh-sum {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ledger container + policy rows. */
+.pledger {
+  border: 1px solid var(--line-2);
+  border-radius: 0 0 3px 3px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.prow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px 18px;
+  padding: 13px 16px 13px 18px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.12s;
+  align-items: center;
+  position: relative;
+}
+.prow::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+}
+.prow.s-paying::before { background: var(--signal); }
+.prow.s-paid::before { background: var(--good); }
+.prow.s-covered::before { background: var(--text-3); }
+.prow.s-nopay::before { background: var(--line-3); }
+.prow:last-child {
+  border-bottom: none;
+}
+.prow:hover {
+  background: var(--surface-2);
+}
+.prow-main {
+  min-width: 0;
+}
+.prow-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.prow-id {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+}
+.prow-mkt {
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prow-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  flex-wrap: wrap;
+}
+.prow-fig {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.prow-fig .fk {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-3);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.prow-fig .fv {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 3px;
+}
+.prow-fig .fv.sig {
+  color: var(--signal-2);
+}
+.prow-fig .fu {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-3);
+  margin-left: 3px;
+  font-weight: 400;
+}
+.prow-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.prow-bar .pbar {
+  flex: 1;
+  height: 5px;
+  border-radius: 0;
+  background: var(--surface-3);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.prow-bar .pbar i {
+  display: block;
+  height: 100%;
+  background: var(--signal);
+}
+.prow-bar .pbt {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* Tighten badge rounding inside ledger rows. */
+.prow .badge { border-radius: 2px; }
+.prow .badge .d { border-radius: 1px; }
+
+/* Recent activity panel. */
+.actfeed {
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-m);
+  overflow: hidden;
+  background: var(--surface);
+}
+.actrow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.actrow:last-child {
+  border-bottom: none;
+}
+.actrow .aic {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  flex: none;
+}
+.actrow.a-in .aic { color: var(--good); }
+.actrow.a-out .aic { color: var(--signal-2); }
+.actrow .at {
+  font-size: 13px;
+}
+.actrow .ad {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-top: 2px;
+  letter-spacing: 0.03em;
+}
+.actrow .av {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.actrow .av.pos { color: var(--good); }
+.actrow .av.neg { color: var(--text-2); }
+
+/* Gated /policies — skeleton dashboard frame (matches hero shape). */
+.skel-dash {
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+  margin-bottom: 28px;
+}
+.skel-dash-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+}
+.skel-dash-cell {
+  padding: 18px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.skel-dash-cell:last-child {
+  border-right: none;
+}
+.skel-dash-cell.lead {
+  background: var(--surface-2);
+}
+.skel-dash-bar {
+  padding: 13px 18px;
+  border-top: 1px solid var(--line-2);
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ============================================================
    Responsive — ONE @media block per breakpoint, all rules consolidated.
    Previously this file had two `@media (max-width: 680px)` blocks which
    tripped Lightning CSS dedup and silently dropped rules — keeping a
@@ -2378,6 +2818,45 @@ h1.h1 {
   /* Gated preview prompts a bit higher on small screens. */
   .gate-veil { padding-top: 42px; }
   .gate-card { padding: 26px 22px 24px; }
+
+  /* Portfolio hero — 4 cells become 2x2; release row stacks. */
+  .pf-hero-grid { grid-template-columns: 1fr 1fr; }
+  .pf-hcell { padding: 14px 15px; }
+  .pf-hcell:nth-child(odd) { border-right: 1px solid var(--line); }
+  .pf-hcell:nth-child(even) { border-right: none; }
+  .pf-hcell:nth-child(1),
+  .pf-hcell:nth-child(2) { border-bottom: 1px solid var(--line); }
+  .pf-num { font-size: 22px; }
+  .pf-hcell.lead .pf-num { font-size: 22px; }
+  .pf-rel { padding: 13px 15px; gap: 10px; }
+  .pf-rel-bar { min-width: 100%; order: 3; }
+  .pf-rel-fig,
+  .pf-rel-pct { font-size: 11px; }
+  .pf-rel .btn { width: 100%; order: 4; }
+
+  /* Policy ledger rows stack with figure under main. */
+  .prow {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 14px 15px;
+  }
+  .prow-fig {
+    text-align: left;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-top: 11px;
+    border-top: 1px solid var(--line);
+  }
+  .prow-fig .fk { order: 1; }
+  .prow-fig .fv { order: 2; font-size: 17px; }
+  .prow-mkt { white-space: normal; }
+
+  /* Gated skeleton dashboard — 2x2 cells. */
+  .skel-dash-grid { grid-template-columns: 1fr 1fr; }
+  .skel-dash-cell:nth-child(2) { border-right: none; }
+  .skel-dash-cell:nth-child(1),
+  .skel-dash-cell:nth-child(2) { border-bottom: 1px solid var(--line); }
 }
 
 /* Tablet — flow + hero stack into single columns; hide horizontal arrows
@@ -2396,22 +2875,42 @@ h1.h1 {
 
 @media (max-width: 430px) {
   .brand .p { display: none; }
+
+  /* Portfolio hero collapses to single column on the narrowest phones. */
+  .pf-hero-grid { grid-template-columns: 1fr; }
+  .pf-hcell { border-right: none !important; }
+  .pf-hcell:not(:last-child) { border-bottom: 1px solid var(--line); }
 }
 
 @media (min-width: 681px) {
   .drawer { display: none !important; }
 }
 
-/* Wide screens — order grid widens to 2 columns at 1180px+, 3 at 1680px+. */
+/* Wide screens — order grid + policy ledger widen to 2 cols at 1180px+,
+   3 at 1680px+. Inner borders re-balance so columns stay visually
+   separated within each ledger. */
 @media (min-width: 1180px) {
   .order-grid {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
   }
+  .pledger {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .pledger .prow { border-right: 1px solid var(--line); }
+  .pledger .prow:nth-child(even) { border-right: none; }
+  .pledger .prow:nth-last-child(2):nth-child(odd) { border-bottom: none; }
 }
 @media (min-width: 1680px) {
   .order-grid {
     grid-template-columns: 1fr 1fr 1fr;
+  }
+  .pledger { grid-template-columns: 1fr 1fr 1fr; }
+  .pledger .prow:nth-child(even) { border-right: 1px solid var(--line); }
+  .pledger .prow:nth-child(3n) { border-right: none; }
+  .pledger .prow:nth-last-child(2):nth-child(odd) {
+    border-bottom: 1px solid var(--line);
   }
 }
 
