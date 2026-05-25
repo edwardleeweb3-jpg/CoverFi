@@ -135,6 +135,16 @@ contract CoverFiPolicy is AccessControl {
     ///         Signa order → at most one policy).
     error OrderAlreadyInsured(bytes32 orderHash, uint256 existingPolicyId);
 
+    /// @notice Thrown when `triggerSettlement` is called with a
+    ///         policyId that was never minted (owner == address(0)).
+    error PolicyNotFound(uint256 policyId);
+
+    /// @notice Thrown when `triggerSettlement` is called on a policy
+    ///         that has already left the Active state. The current
+    ///         status is included so the settler can diagnose without
+    ///         a second RPC call.
+    error PolicyNotActive(uint256 policyId, PolicyStatus currentStatus);
+
     // ─── Events ──────────────────────────────────────────────────
 
     /// @notice Emitted on every successful `buyPolicy`. `option` is the
@@ -162,14 +172,23 @@ contract CoverFiPolicy is AccessControl {
         uint32 settledAt
     );
 
-    /// @notice Emitted on every successful claim and on the one-shot
-    ///         premium refund that fires at Void settlement (PRD §3.4).
-    ///         `isRefund = true` distinguishes the refund case.
+    /// @notice Emitted on every successful claim of released principal
+    ///         (Phase B5). Claims and refunds are distinct cash-flow
+    ///         types and get distinct events — see `PolicyRefunded`.
     event PolicyClaimed(
         uint256 indexed policyId,
         address indexed owner,
-        uint256 amount,
-        bool isRefund
+        uint256 amount
+    );
+
+    /// @notice Emitted on the one-shot premium refund at Void
+    ///         settlement (PRD §3.4). Independent from `PolicyClaimed`
+    ///         so event indexers can route refunds and claims
+    ///         separately without an in-payload flag.
+    event PolicyRefunded(
+        uint256 indexed policyId,
+        address indexed owner,
+        uint256 amount
     );
 
     /// @notice Emitted on every Q change, including the bootstrap value
@@ -337,5 +356,75 @@ contract CoverFiPolicy is AccessControl {
 
         // ─ INTERACTIONS ─
         usdc.safeTransferFrom(msg.sender, address(this), premium);
+    }
+
+    // ─── Settler: triggerSettlement ──────────────────────────────
+
+    /// @notice Move a policy out of the Active state per the Signa
+    ///         market result. Authority is gated by SETTLER_ROLE — in
+    ///         v1 testnet this is a project EOA; Segment 5 hands the
+    ///         role to a Signa-aware adapter contract via grant/revoke
+    ///         (the contract itself doesn't need to change for that).
+    ///
+    ///         Three outcomes (enum `SettlementOutcome` — PRD §2.2):
+    ///           Miss → policy enters `Releasing`; 365-day linear
+    ///                  release starts from `settledAt`. Payout flow
+    ///                  lives in `claim` (Phase B5).
+    ///           Hit  → policy enters terminal `Hit`; premium retained
+    ///                  by the protocol, no payout (PRD §3.4).
+    ///           Void → policy enters terminal `Void`; premium is
+    ///                  refunded to the owner in this same call
+    ///                  (PRD §3.4). Refund emits `PolicyRefunded`,
+    ///                  separate from `PolicyClaimed` so indexers can
+    ///                  route the two cash-flow types independently.
+    ///
+    ///         `settledAt = block.timestamp` is written in all three
+    ///         branches — it's the "when did the market settle"
+    ///         timestamp, useful as a record regardless of branch; the
+    ///         Releasing branch additionally uses it as the linear
+    ///         release origin.
+    ///
+    ///         Strict CEI is preserved in the Void branch: status flip
+    ///         + both events emit before the `safeTransfer`, so a
+    ///         hostile ERC20 with a transfer hook can't see this
+    ///         policy as still Active and try to settle it again.
+    ///
+    /// @param policyId  Id from a prior `buyPolicy`.
+    /// @param outcome   Miss / Hit / Void per PRD §2.2.
+    function triggerSettlement(uint256 policyId, SettlementOutcome outcome)
+        external
+        onlyRole(SETTLER_ROLE)
+    {
+        Policy storage p = policies[policyId];
+
+        // ─ CHECKS ─
+        // Policy 0 is reserved (nextPolicyId starts at 1), and a
+        // never-minted slot has owner == address(0).
+        if (p.owner == address(0)) revert PolicyNotFound(policyId);
+        if (p.status != PolicyStatus.Active) {
+            revert PolicyNotActive(policyId, p.status);
+        }
+
+        // ─ EFFECTS ─
+        uint32 settledAt = uint32(block.timestamp);
+        p.settledAt = settledAt;
+
+        if (outcome == SettlementOutcome.Miss) {
+            p.status = PolicyStatus.Releasing;
+            emit PolicySettled(policyId, outcome, settledAt);
+        } else if (outcome == SettlementOutcome.Hit) {
+            p.status = PolicyStatus.Hit;
+            emit PolicySettled(policyId, outcome, settledAt);
+        } else {
+            // Void — refund the original premium back to the owner.
+            p.status = PolicyStatus.Void;
+            address owner_ = p.owner;
+            uint256 refund = p.premium;
+            emit PolicySettled(policyId, outcome, settledAt);
+            emit PolicyRefunded(policyId, owner_, refund);
+
+            // ─ INTERACTIONS (Void only) ─
+            usdc.safeTransfer(owner_, refund);
+        }
     }
 }
