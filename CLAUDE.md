@@ -134,6 +134,25 @@ f8cf7f4 feat: step 2 — providers and UI primitives
 **Next: Segment 4 — Smart contracts.** See §8 for scope. Segments 2 + 3
 are closed unless a specific issue surfaces.
 
+### Deployment
+
+Live at **https://cover-fi.vercel.app** (verified: pages render and
+Supabase reads/writes work in production).
+
+- **Host:** Vercel project connected to this GitHub repo.
+- **Auto-deploy:** every push to `main` triggers a Production
+  rebuild; PR branches get Preview deploys.
+- **Env vars (set in Vercel project settings, scoped to Production
+  + Preview):**
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+
+  These mirror local `.env.local` exactly — both are public-safe
+  (RLS gates real access). Service-role keys, if ever introduced,
+  must stay server-only and unprefixed.
+- **Build command / output:** Next.js defaults (`next build`,
+  `.next/`). No custom Vercel config file in repo.
+
 ### Simulation vs. real — current boundary
 
 | Piece                         | Where it lives now              |
