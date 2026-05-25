@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 import { useHasMounted } from "@/hooks/useHasMounted";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { useLocale, useT } from "@/hooks/useT";
-import { listPoliciesByOwner } from "@/lib/db/policies";
+import { listPoliciesByOwner, updatePolicyClaim } from "@/lib/db/policies";
 import type { Policy, PolicyStatus } from "@/lib/mock";
 import { bucketOf, claimableOf, releasedOf } from "@/lib/pricing";
 import { money } from "@/lib/format";
@@ -19,9 +20,6 @@ import { PolicyFilterBar, type FilterKey } from "./PolicyFilterBar";
 import { PolicyLedger } from "./PolicyLedger";
 import { ActivityFeed } from "./ActivityFeed";
 import { GatedView } from "./GatedView";
-
-/** Simulated batch-claim latency — matches prototype's setTimeout. */
-const BATCH_CLAIM_DELAY_MS = 1200;
 
 /** Discriminated state for the DB read. */
 type LoadState =
@@ -45,13 +43,18 @@ type LoadState =
  * `useSimulationStore` — out of scope for this step (DB persistence
  * for those lands in later steps).
  *
- * Claim All flow: we apply the lifecycle mutation locally so the
- * overview cells + ledger reflect it immediately, and still call
- * `store.claimAll()` so the in-memory balance + activity update for
- * any policies that were also minted in this session. DB-persisted
- * claim writes are the next step — for now refreshing the page will
- * snap back to the DB's view (matching the existing behaviour where
- * balance/activity also reset on reload).
+ * Claim All flow: persists per-policy claims to Supabase first
+ * (parallel UPDATEs, scoped to id + owner_address), then applies the
+ * same mutation to local state so the overview + ledger reflect the
+ * change without a re-fetch. We also still call `store.claimAll()`
+ * so the in-memory balance + activity update for any policies that
+ * were also minted this session (the store's policies slice is a
+ * no-op for DB-only rows — its purpose here is balance + activity
+ * side-effects, which live entirely in-memory until later steps).
+ *
+ * If any per-policy write fails we surface a save-failed modal and
+ * re-fetch from the DB to reconcile — successful partial writes are
+ * already persisted, so the truth comes from the next read.
  */
 export function PoliciesPage() {
   const t = useT();
@@ -67,6 +70,7 @@ export function PoliciesPage() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [batching, setBatching] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
+  const [claimErrorOpen, setClaimErrorOpen] = useState(false);
 
   const fetchPolicies = useCallback(async () => {
     if (!address) return;
@@ -112,39 +116,64 @@ export function PoliciesPage() {
   const hasAny = policies.length > 0;
   const hasFilter = search.trim().length > 0 || filter !== "all";
 
-  const handleBatchClaim = () => {
+  const handleBatchClaim = async () => {
     if (batching) return;
+    if (!address) return;
+
+    // Snapshot what's claimable right now — same filter the store
+    // uses, but applied to our locally-fetched array.
+    const claimable = policies.filter((p) => claimableOf(p) > 0);
+    if (claimable.length === 0) return;
+
+    // Pre-compute each row's post-claim state so we can write it to
+    // the DB AND apply it locally without re-deriving twice.
+    const mutated = claimable.map((p) => ({
+      before: p,
+      after: applyClaimMutation(p),
+    }));
+    const total = claimable.reduce((s, p) => s + claimableOf(p), 0);
+
     setBatching(true);
-    setTimeout(() => {
-      // Snapshot which policies have something claimable now —
-      // mirrors store.claimAll's filter but operates on our locally-
-      // fetched array.
-      const claimable = policies.filter((p) => claimableOf(p) > 0);
-      if (claimable.length === 0) {
-        setBatching(false);
-        return;
-      }
-      const total = claimable.reduce((s, p) => s + claimableOf(p), 0);
+    const writeResults = await Promise.all(
+      mutated.map(({ after }) =>
+        updatePolicyClaim({
+          id: after.id,
+          ownerAddress: address,
+          claimed: after.claimed ?? 0,
+          status: after.status,
+        }),
+      ),
+    );
+    setBatching(false);
 
-      // Apply the same lifecycle transition the store does (claimed →
-      // released; status flips to `completed` when within epsilon of
-      // full release).
-      setLoadState({
-        kind: "ready",
-        policies: policies.map((p) => applyClaimMutation(p)),
-      });
+    const allOk = writeResults.every((r) => r.ok);
+    if (!allOk) {
+      // Some writes may have landed and others may not — re-fetch
+      // so the page reflects whatever the DB now holds, then surface
+      // the error.
+      setClaimErrorOpen(true);
+      void fetchPolicies();
+      return;
+    }
 
-      // Still call store.claimAll so balance + activity update for
-      // any policies that were also minted this session. For DB-only
-      // policies the store call is a no-op — that's fine; balance
-      // reconciliation moves to the DB-claim step next.
-      claimAllStore();
-      setBatching(false);
-      showToast(t.claimedBatch(money(total)), {
-        kind: "info",
-        sub: t.batchDone(claimable.length),
-      });
-    }, BATCH_CLAIM_DELAY_MS);
+    // Apply the same lifecycle transition the store does (claimed →
+    // released; status flips to `completed` when within epsilon of
+    // full release) — DB has already accepted these values, so this
+    // is just the local mirror.
+    setLoadState({
+      kind: "ready",
+      policies: policies.map((p) => applyClaimMutation(p)),
+    });
+
+    // Mirror to in-memory store so balance + activity update for
+    // any policies that were also minted this session. For DB-only
+    // policies the store call is a no-op.
+    claimAllStore();
+
+    showToast(t.claimedBatch(money(total)), {
+      kind: "info",
+      sub: t.batchDone(claimable.length),
+    });
   };
 
   return (
@@ -197,7 +226,7 @@ export function PoliciesPage() {
         )}
       </div>
 
-      {/* Non-dismissible busy overlay during the simulated batch claim. */}
+      {/* Non-dismissible busy overlay while the parallel DB writes run. */}
       {batching && (
         <div
           className="overlay"
@@ -214,6 +243,25 @@ export function PoliciesPage() {
           </div>
         </div>
       )}
+
+      {/* DB persistence for the batch claim failed (network /
+          unexpected). The page has already re-fetched to reconcile;
+          dismiss + retry by clicking Claim All again. */}
+      <Modal
+        open={claimErrorOpen}
+        onClose={() => setClaimErrorOpen(false)}
+        title={t.errClaimSaveTitle}
+      >
+        <div className="errbox">{t.errClaimSaveMsg}</div>
+        <Button
+          variant="ghost"
+          block
+          className="mt-3"
+          onClick={() => setClaimErrorOpen(false)}
+        >
+          {t.dismiss}
+        </Button>
+      </Modal>
     </>
   );
 }

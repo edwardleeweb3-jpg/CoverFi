@@ -161,6 +161,56 @@ export async function getPolicyById(
 }
 
 // ====================================================================
+// Claim write
+// ====================================================================
+
+/** Tagged result for `updatePolicyClaim()`. */
+export type UpdatePolicyClaimResult =
+  | { ok: true }
+  | { ok: false; reason: "not-found" }
+  | { ok: false; reason: "other"; message: string };
+
+/**
+ * Persist a single-policy claim. Scoped to (id, owner_address) so
+ * the request can never touch another wallet's row — even if a
+ * caller passes a foreign id, the UPDATE will simply match 0 rows
+ * and we surface `not-found`.
+ *
+ * Writes only the fields the in-memory claim mutation actually
+ * changes today (see `applyClaimMutation` in PoliciesPage.tsx):
+ *
+ *   - `claimed`: bumped to `releasedOf(policy)` at claim time.
+ *   - `status`:  flips to `'completed'` once released ≈ principal
+ *                (within the 0.01-USDC epsilon used in the
+ *                simulation); otherwise unchanged.
+ *
+ * Balance + activity are deliberately NOT touched here — they don't
+ * have DB tables yet (PRD §5 only defines `markets` / `policies` /
+ * `activities` / `config`; `activities` is out of scope for this
+ * segment and balance is on-chain in the contract phase).
+ *
+ * `.select("id")` lets us distinguish "row did not exist (or wasn't
+ * yours)" from a true error — without it, supabase-js reports the
+ * 0-row case as success.
+ */
+export async function updatePolicyClaim(input: {
+  id: string;
+  ownerAddress: string;
+  claimed: number;
+  status: PolicyStatus;
+}): Promise<UpdatePolicyClaimResult> {
+  const { data, error } = await supabase
+    .from("policies")
+    .update({ claimed: input.claimed, status: input.status })
+    .eq("id", input.id)
+    .eq("owner_address", input.ownerAddress.toLowerCase())
+    .select("id");
+  if (error) return { ok: false, reason: "other", message: error.message };
+  if (!data || data.length === 0) return { ok: false, reason: "not-found" };
+  return { ok: true };
+}
+
+// ====================================================================
 // DB-row → frontend `Policy` mapper
 // ====================================================================
 

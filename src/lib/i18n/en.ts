@@ -242,6 +242,9 @@ export const en = {
   errLoadTitle: "Couldn't load",
   errLoadMsg:
     "There was a problem loading this from the database. Check your connection and try again.",
+  errClaimSaveTitle: "Couldn't save your claim",
+  errClaimSaveMsg:
+    "Something went wrong saving your claim to the database. Please try again.",
   retryBtn: "Try again",
   notFoundPolicyT: "Policy not found",
   notFoundPolicyD:

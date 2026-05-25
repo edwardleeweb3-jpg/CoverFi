@@ -223,6 +223,8 @@ export const zh: Dict = {
   errOrderTakenMsg: "该 Signa 订单已被投保，请刷新投保列表查看仍可投保的订单。",
   errLoadTitle: "加载失败",
   errLoadMsg: "从数据库加载时出现问题，请检查网络后重试。",
+  errClaimSaveTitle: "领取未能保存",
+  errClaimSaveMsg: "将领取保存到数据库时出现问题，请重试。",
   retryBtn: "重试",
   notFoundPolicyT: "未找到该保单",
   notFoundPolicyD: "在你当前连接的钱包下未找到该保单，可能由另一个地址铸造。",

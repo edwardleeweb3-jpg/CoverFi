@@ -6,12 +6,13 @@ import { useAccount } from "wagmi";
 import { useHasMounted } from "@/hooks/useHasMounted";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
 import { Panel } from "@/components/ui/Panel";
 import { Spinner } from "@/components/ui/Spinner";
 import { GatedView } from "@/components/policies/GatedView";
 import { applyClaimMutation } from "@/components/policies/PoliciesPage";
 import { useT } from "@/hooks/useT";
-import { getPolicyById } from "@/lib/db/policies";
+import { getPolicyById, updatePolicyClaim } from "@/lib/db/policies";
 import type { Policy } from "@/lib/mock";
 import { claimableOf } from "@/lib/pricing";
 import { money } from "@/lib/format";
@@ -25,9 +26,6 @@ import { StatusTimeline } from "./StatusTimeline";
 interface Props {
   policyId: string;
 }
-
-/** Simulated single-claim latency — matches prototype's setTimeout. */
-const CLAIM_DELAY_MS = 1050;
 
 /** DB-fetch lifecycle for the detail screen. */
 type LoadState =
@@ -49,11 +47,17 @@ type LoadState =
  *   notFound → existing NotFoundView (now with policy-specific copy)
  *   ready    → certificate + status block + timeline
  *
- * Claim button mirrors PoliciesPage: applies the lifecycle change
- * to local state immediately (so the UI reflects the claim), and
- * still calls `store.claimPolicy()` so balance + activity update for
- * any policies that were also minted this session. DB-persisted claim
- * writes are the next step.
+ * Claim button: persists the new `claimed` (and possibly `status =
+ * 'completed'`) to Supabase first, then applies the same mutation to
+ * local state so the certificate + release block + timeline reflect
+ * the claim without re-fetching. Also mirrors to `store.claimPolicy`
+ * so the in-memory balance + activity update for in-session-minted
+ * policies (no-op for DB-only policies — balance + activity persistence
+ * have no table yet).
+ *
+ * If the DB write fails we surface a save-failed modal. Local state
+ * is left untouched, so dismissing + clicking Claim again retries
+ * cleanly.
  */
 export function PolicyDetailPage({ policyId }: Props) {
   const t = useT();
@@ -64,6 +68,7 @@ export function PolicyDetailPage({ policyId }: Props) {
 
   const [busy, setBusy] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
+  const [claimErrorOpen, setClaimErrorOpen] = useState(false);
 
   const fetchPolicy = useCallback(async () => {
     if (!address) return;
@@ -99,27 +104,38 @@ export function PolicyDetailPage({ policyId }: Props) {
 
   const policy = loadState.policy;
 
-  const handleClaim = () => {
+  const handleClaim = async () => {
     if (busy) return;
+    if (!address) return;
+    const claimable = claimableOf(policy);
+    if (claimable <= 0) return;
+
+    // Pre-compute the post-claim state — the DB write needs the new
+    // `claimed` + `status`, and the local mirror needs the full
+    // mutated policy.
+    const mutated = applyClaimMutation(policy);
+
     setBusy(true);
-    setTimeout(() => {
-      const claimable = claimableOf(policy);
-      if (claimable > 0) {
-        // Apply the same lifecycle transition the store does, so the
-        // certificate + release block + timeline reflect the claim
-        // without re-fetching.
-        const mutated = applyClaimMutation(policy);
-        setLoadState({ kind: "ready", policy: mutated });
-      }
-      // Mirror to the in-memory store so the global balance +
-      // activity feed update for in-session-minted policies (no-op
-      // for DB-only policies). The DB-write path lands next step.
-      claimPolicyStore(policyId);
-      setBusy(false);
-      if (claimable > 0) {
-        showToast(t.claimedToast(money(claimable)), { kind: "info" });
-      }
-    }, CLAIM_DELAY_MS);
+    const result = await updatePolicyClaim({
+      id: policy.id,
+      ownerAddress: address,
+      claimed: mutated.claimed ?? 0,
+      status: mutated.status,
+    });
+    setBusy(false);
+
+    if (!result.ok) {
+      // Local state untouched — user can dismiss and retry.
+      setClaimErrorOpen(true);
+      return;
+    }
+
+    setLoadState({ kind: "ready", policy: mutated });
+    // Mirror to in-memory store so the global balance + activity
+    // feed update for in-session-minted policies (no-op for DB-only
+    // policies).
+    claimPolicyStore(policyId);
+    showToast(t.claimedToast(money(claimable)), { kind: "info" });
   };
 
   const showReleaseBlock =
@@ -150,7 +166,7 @@ export function PolicyDetailPage({ policyId }: Props) {
         </div>
       </div>
 
-      {/* Non-dismissible spinner during the simulated claim tx. */}
+      {/* Non-dismissible spinner while the DB write is in flight. */}
       {busy && (
         <div
           className="overlay"
@@ -167,6 +183,24 @@ export function PolicyDetailPage({ policyId }: Props) {
           </div>
         </div>
       )}
+
+      {/* DB write failed. Local state was left at the pre-claim
+          policy, so dismissing + clicking Claim again retries. */}
+      <Modal
+        open={claimErrorOpen}
+        onClose={() => setClaimErrorOpen(false)}
+        title={t.errClaimSaveTitle}
+      >
+        <div className="errbox">{t.errClaimSaveMsg}</div>
+        <Button
+          variant="ghost"
+          block
+          className="mt-3"
+          onClick={() => setClaimErrorOpen(false)}
+        >
+          {t.dismiss}
+        </Button>
+      </Modal>
     </>
   );
 }
