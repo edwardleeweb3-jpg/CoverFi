@@ -1,36 +1,79 @@
 "use client";
 
+import { useEffect } from "react";
+import { useAccount, useConnect } from "wagmi";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { useT } from "@/hooks/useT";
 import { useWalletStore } from "@/stores/wallet";
-import type { Dict } from "@/lib/i18n";
+import { useToastStore } from "@/stores/toast";
+import { useLocaleStore } from "@/stores/locale";
+import { dictionaries } from "@/lib/i18n";
+import { shortAddress } from "@/lib/format";
 
-interface WalletOption {
-  name: string;
-  /** Looked up against the dictionary at render time so it follows the active language. */
-  descKey: keyof Pick<Dict, "extension" | "scanMobile">;
-  /** Marker tile background — mirrors prototype's per-wallet color. */
-  bg: string;
-  letter: string;
-}
-
-const OPTIONS: WalletOption[] = [
-  { name: "MetaMask", descKey: "extension", bg: "#E2761B", letter: "M" },
-  { name: "Rabby", descKey: "extension", bg: "#5577FF", letter: "R" },
-  { name: "WalletConnect", descKey: "scanMobile", bg: "#2E3B4E", letter: "W" },
-];
+const METAMASK_INSTALL_URL = "https://metamask.io/download/";
 
 /**
- * Renders the wallet picker modal AND the connecting-status modal based on
- * the WalletStore's `flow` field. Mounted once via AppProviders, no props.
+ * Renders the wallet picker modal AND the connecting-status modal driven
+ * by WalletStore's `flow` field. Mounted once via AppProviders.
+ *
+ * v1 wallet list = MetaMask only. The generic "Injected" connector that
+ * wagmi creates when no EIP-6963 wallet is detected is deliberately not
+ * surfaced as a separate row — it's developer terminology, not user-
+ * facing. When MetaMask isn't installed we still show the MetaMask row
+ * but degrade it to an install-link affordance.
  */
 export function WalletFlow() {
   const flow = useWalletStore((s) => s.flow);
   const closePicker = useWalletStore((s) => s.closePicker);
-  const pickWallet = useWalletStore((s) => s.pickWallet);
+  const setConnecting = useWalletStore((s) => s.setConnecting);
+  const setIdle = useWalletStore((s) => s.setIdle);
   const t = useT();
+
+  const { connectors, connect, error } = useConnect();
+  const { isConnected, address } = useAccount();
+
+  // EIP-6963 surfaces installed wallets by name; case-insensitive match.
+  const metamaskConnector = connectors.find((c) =>
+    c.name.toLowerCase().includes("metamask"),
+  );
+  const installed = Boolean(metamaskConnector);
+
+  // Success → close the spinner + fire the connected toast.
+  useEffect(() => {
+    if (flow.kind === "connecting" && isConnected && address) {
+      const tt = dictionaries[useLocaleStore.getState().lang];
+      useToastStore.getState().show(tt.connected(flow.name), {
+        kind: "info",
+        sub: shortAddress(address),
+      });
+      setIdle();
+    }
+  }, [flow, isConnected, address, setIdle]);
+
+  // Error / user-rejected → fire an error toast and return to idle.
+  useEffect(() => {
+    if (flow.kind === "connecting" && error) {
+      const tt = dictionaries[useLocaleStore.getState().lang];
+      useToastStore.getState().show(tt.rejected, {
+        kind: "err",
+        sub: error.message,
+      });
+      setIdle();
+    }
+  }, [flow, error, setIdle]);
+
+  const handleMetaMaskClick = () => {
+    if (installed && metamaskConnector) {
+      setConnecting("MetaMask");
+      connect({ connector: metamaskConnector });
+    } else {
+      // Open MetaMask's official download page in a new tab. The picker
+      // stays open so the user can come back and click again after install.
+      window.open(METAMASK_INSTALL_URL, "_blank", "noopener,noreferrer");
+    }
+  };
 
   if (flow.kind === "picker") {
     return (
@@ -40,33 +83,51 @@ export function WalletFlow() {
         title={t.walletModalT}
         description={t.walletModalP}
       >
-        {OPTIONS.map((opt) => (
-          <button
-            key={opt.name}
-            type="button"
-            onClick={() => pickWallet(opt.name)}
-            className="wallet-opt"
-          >
-            <span className="ic" style={{ background: opt.bg }}>
-              {opt.letter}
-            </span>
-            <span>
-              <span className="wn">{opt.name}</span>
-              <br />
-              <span className="wd">{t[opt.descKey]}</span>
-            </span>
-            <span className="arr">
+        <button
+          type="button"
+          onClick={handleMetaMaskClick}
+          className="wallet-opt"
+        >
+          <span className="ic" style={{ background: "transparent" }}>
+            <img
+              src="/wallets/metamask.svg"
+              alt=""
+              width={28}
+              height={28}
+              style={{ opacity: installed ? 1 : 0.55 }}
+              draggable={false}
+            />
+          </span>
+          <span>
+            <span className="wn">MetaMask</span>
+            <br />
+            <span className="wd">{installed ? t.extension : t.notInstalled}</span>
+          </span>
+          <span className="arr">
+            {installed ? (
               <Icon name="arrow" size={16} />
-            </span>
-          </button>
-        ))}
+            ) : (
+              <span
+                style={{
+                  color: "var(--signal-2)",
+                  fontFamily: "var(--mono)",
+                  fontSize: 11,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {t.installMetaMask} ↗
+              </span>
+            )}
+          </span>
+        </button>
       </Modal>
     );
   }
 
   if (flow.kind === "connecting") {
-    // Non-dismissible by design — no onClose, no Esc handler. Rendered as bare
-    // overlay/modal markup (not via <Modal>) so we don't inherit close behavior.
+    // Non-dismissible — no onClose, no Esc handler.
     return (
       <div className="overlay" role="dialog" aria-modal="true" aria-live="polite">
         <div className="modal">

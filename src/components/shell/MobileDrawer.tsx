@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
+import { useAccount, useDisconnect } from "wagmi";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useLocale, useT } from "@/hooks/useT";
 import { useThemeStore } from "@/stores/theme";
 import { useWalletStore } from "@/stores/wallet";
+import { useToast } from "@/stores/toast";
+import { shortAddress } from "@/lib/format";
 import type { Dict } from "@/lib/i18n";
 import type { IconName } from "@/components/ui/icon-paths";
 
@@ -23,13 +26,6 @@ const NAV_ITEMS: DrawerNav[] = [
   { href: "/policies", labelKey: "navPortfolio", icon: "doc" },
 ];
 
-function money(n: number) {
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -41,19 +37,22 @@ interface Props {
  *
  * - Closes on: Esc, backdrop click, nav link click.
  * - Locks body scroll while open.
- * - Connect / Disconnect in the foot close the drawer before triggering the
- *   wallet store action (matches prototype flow).
+ * - Connect closes the drawer first, then opens the wagmi picker.
+ * - Disconnect closes the drawer, calls wagmi disconnect, fires toast.
+ *
+ * Balance display is intentionally omitted at this step — once we have
+ * USDC token-contract integration (PRD-driven later step) we'll show
+ * the real balance here. Native BNB balance would be misleading.
  */
 export function MobileDrawer({ open, onClose }: Props) {
   const { lang, setLang } = useLocale();
   const t = useT();
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
-  const connected = useWalletStore((s) => s.connected);
-  const address = useWalletStore((s) => s.address);
-  const balance = useWalletStore((s) => s.balance);
+  const { isConnected, address } = useAccount();
+  const { disconnect } = useDisconnect();
   const openPicker = useWalletStore((s) => s.openPicker);
-  const disconnect = useWalletStore((s) => s.disconnect);
+  const showToast = useToast();
   const pathname = usePathname();
 
   // Stable ref to onClose to avoid resubscribing effects on every render.
@@ -89,6 +88,8 @@ export function MobileDrawer({ open, onClose }: Props) {
     if (href === "/") return pathname === "/";
     return pathname === href || pathname.startsWith(href + "/");
   };
+
+  const connected = isConnected;
 
   return (
     <div
@@ -180,8 +181,7 @@ export function MobileDrawer({ open, onClose }: Props) {
             <>
               <div className="d-wallet">
                 <span className="live" />
-                <span>{address}</span>
-                <span className="d-bal">{money(balance)} USDC</span>
+                <span>{shortAddress(address)}</span>
               </div>
               <Button
                 variant="ghost"
@@ -189,6 +189,7 @@ export function MobileDrawer({ open, onClose }: Props) {
                 onClick={() => {
                   onClose();
                   disconnect();
+                  showToast(t.disconnected);
                 }}
               >
                 {t.disconnect}

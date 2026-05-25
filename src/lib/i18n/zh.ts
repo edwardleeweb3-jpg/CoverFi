@@ -247,4 +247,14 @@ export const zh: Dict = {
   themeLabel: "外观",
   themeLight: "亮色",
   themeDark: "暗色",
+
+  wrongChain: "网络不匹配",
+  wrongChainDesc: (name) => `当前连接的是错误网络,请切换到 ${name} 后继续。`,
+  switchTo: (name) => `切换到 ${name}`,
+  switching: "切换中…",
+  noWalletTitle: "未检测到浏览器钱包",
+  noWalletDesc: "请先安装 MetaMask 等浏览器扩展钱包,然后刷新本页。",
+  rejected: "连接已取消",
+  notInstalled: "未安装",
+  installMetaMask: "安装 MetaMask",
 };

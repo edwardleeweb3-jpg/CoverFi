@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { useAccount } from "wagmi";
 import { BrandMark, Icon } from "@/components/ui/Icon";
 import { WalletConnectButton } from "@/components/wallet/WalletConnectButton";
 import { useLocale, useT } from "@/hooks/useT";
 import { useThemeStore } from "@/stores/theme";
-import { useWalletStore } from "@/stores/wallet";
 import { MobileDrawer } from "./MobileDrawer";
 import type { Dict } from "@/lib/i18n";
 
@@ -34,7 +34,7 @@ export function SiteHeader() {
   const t = useT();
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
-  const connected = useWalletStore((s) => s.connected);
+  const { isConnected: connected } = useAccount();
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
 

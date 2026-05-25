@@ -264,4 +264,15 @@ export const en = {
   themeLabel: "Appearance",
   themeLight: "Light",
   themeDark: "Dark",
+
+  // Wallet — wrong-chain / no-wallet states (step 5 wagmi integration).
+  wrongChain: "Wrong network",
+  wrongChainDesc: (name: string) => `Connected to the wrong network. Switch to ${name} to continue.`,
+  switchTo: (name: string) => `Switch to ${name}`,
+  switching: "Switching…",
+  noWalletTitle: "No browser wallet detected",
+  noWalletDesc: "Install MetaMask or another browser-extension wallet, then reload.",
+  rejected: "Connection cancelled",
+  notInstalled: "Not installed",
+  installMetaMask: "Install MetaMask",
 };
