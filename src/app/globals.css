@@ -2006,6 +2006,201 @@ h1.h1 {
 }
 
 /* ============================================================
+   Insurance review — two-column layout, pay-cover stripe, terms
+   breakdown table, floor note, checklist, wallet/pay box, errbox.
+   ============================================================ */
+
+/* Two-column split (left wider) — stacks at ≤860px (responsive section). */
+.grid2 {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* Subhead inside the order/coverage panel (cat·id mono, then market title). */
+.review-subhead {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.review-mkt {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 5px 0 18px;
+  letter-spacing: -0.01em;
+}
+
+/* "You pay → You're covered for" stripe. */
+.paycover {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-m);
+  overflow: hidden;
+  margin-bottom: 18px;
+  background: var(--surface);
+}
+.pc-cell {
+  flex: 1;
+  padding: 16px 18px;
+}
+.pc-cell.pc-cover {
+  background: var(--signal-soft);
+  border-left: 1px solid var(--line-2);
+}
+.pc-l {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pc-v {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.pc-cover .pc-v {
+  color: var(--signal-2);
+}
+.pc-u {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+  font-family: var(--mono);
+}
+.pc-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--text-3);
+  padding: 0 2px;
+  flex: none;
+}
+
+/* Terms breakdown table (7 rows). */
+.terms {
+  width: 100%;
+  border-collapse: collapse;
+}
+.terms tr {
+  border-top: 1px solid var(--line);
+}
+.terms tr:first-child {
+  border-top: none;
+}
+.terms td {
+  padding: 11px 0;
+  font-size: 13.5px;
+  vertical-align: top;
+}
+.terms td:first-child {
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.terms td:last-child {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.terms td .big {
+  font-size: 15px;
+  color: var(--text);
+  font-weight: 600;
+}
+.terms .hint {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* Notebox below terms table — neutral by default, blue-tinted on .on. */
+.notebox {
+  border-radius: var(--r-s);
+  padding: 12px 14px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  margin-top: 14px;
+  line-height: 1.55;
+}
+.notebox.on {
+  border-color: rgba(85, 119, 255, 0.4);
+  background: var(--signal-soft);
+}
+
+/* CSS-rendered "terms accepted" checklist (decorative, non-interactive). */
+.checklist {
+  list-style: none;
+}
+.checklist li {
+  font-size: 13px;
+  color: var(--text-2);
+  padding: 7px 0 7px 24px;
+  position: relative;
+}
+.checklist li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--text-3);
+  border-radius: 2px;
+}
+.checklist li::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 14px;
+  width: 4px;
+  height: 7px;
+  border: solid var(--signal);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(42deg);
+}
+
+/* Wallet balance + premium-deduction rows above the pay CTA. */
+.walletpay {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 15px;
+}
+.wp-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.wp-row + .wp-row {
+  margin-top: 7px;
+}
+.walletpay-btn {
+  margin-top: 18px;
+}
+
+/* Red-tinted message used inside the insufficient-balance modal. */
+.errbox {
+  border: 1px solid rgba(224, 86, 79, 0.4);
+  background: var(--bad-soft);
+  border-radius: 2px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+/* ============================================================
    Responsive — ONE @media block per breakpoint, all rules consolidated.
    Previously this file had two `@media (max-width: 680px)` blocks which
    tripped Lightning CSS dedup and silently dropped rules — keeping a
@@ -2194,6 +2389,9 @@ h1.h1 {
   .flow.lit .flow-step:nth-child(5)::before { transition-delay: 0.2s; }
   .hero-cols { grid-template-columns: 1fr; gap: 34px; }
   .hero-in .lede { max-width: none; }
+
+  /* Review page collapses the two-column split. */
+  .grid2 { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 430px) {

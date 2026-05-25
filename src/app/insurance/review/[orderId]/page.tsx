@@ -1,26 +1,16 @@
-import Link from "next/link";
+import { ReviewPage } from "@/components/insurance/review/ReviewPage";
 
 /**
- * Review & confirm placeholder for an order. Real implementation in step 8.
- * Next.js 16+ params come as a Promise — we await it server-side.
+ * /insurance/review/[orderId] — confirm-and-pay for one Signa order.
+ * Server shell awaits the orderId param (Next.js 15+ Promise-based
+ * params), then hands off to the client component for wallet + mint
+ * flow.
  */
-export default async function ReviewPage({
+export default async function Page({
   params,
 }: {
   params: Promise<{ orderId: string }>;
 }) {
   const { orderId } = await params;
-  return (
-    <div className="page wrap">
-      <div className="crumb">
-        <Link href="/insurance">Insurance · 投保</Link> / review · 确认
-      </div>
-      <h1 className="pagetitle">
-        Review · 核对确认 · <span className="mono">{orderId}</span>
-      </h1>
-      <p className="pagesub" style={{ marginTop: 14 }}>
-        Placeholder — the real review flow ships in step 8.
-      </p>
-    </div>
-  );
+  return <ReviewPage orderId={orderId} />;
 }

@@ -7,6 +7,7 @@ import { ORDERS } from "@/lib/mock";
 import { kOf, premiumOf } from "@/lib/pricing";
 import { F, RELEASE_DAYS } from "@/lib/config";
 import { pct } from "@/lib/format";
+import { useSimulationStore } from "@/stores/simulation";
 import { ListBar, type SortKey } from "./ListBar";
 import { OrderCard } from "./OrderCard";
 import { EmptyState } from "./EmptyState";
@@ -23,18 +24,25 @@ export function InsuranceList() {
   const t = useT();
   const { lang } = useLocale();
   const { isConnected } = useAccount();
+  const insuredOrderIds = useSimulationStore((s) => s.insuredOrderIds);
 
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("closes");
 
+  /** Orders still available — excludes ones the user has minted this session. */
+  const availableOrders = useMemo(
+    () => ORDERS.filter((o) => !insuredOrderIds.has(o.id)),
+    [insuredOrderIds],
+  );
+
   const filteredOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const filtered = ORDERS.filter((o) => {
+    const filtered = availableOrders.filter((o) => {
       if (!q) return true;
       const mkt = lang === "zh" ? o.mZh : o.mEn;
       return mkt.toLowerCase().includes(q) || o.id.toLowerCase().includes(q);
     });
-    // .slice() so we don't mutate the readonly seed array.
+    // .slice() so we don't mutate the array from useMemo.
     return filtered.slice().sort((a, b) => {
       switch (sort) {
         case "premiumHi":
@@ -48,11 +56,13 @@ export function InsuranceList() {
           return a.closes - b.closes;
       }
     });
-  }, [search, sort, lang]);
+  }, [availableOrders, search, sort, lang]);
 
   if (!isConnected) {
     return <GatedView />;
   }
+
+  const hasSearch = search.trim().length > 0;
 
   return (
     <div className="page wrap">
@@ -73,7 +83,7 @@ export function InsuranceList() {
         </div>
       </div>
 
-      {ORDERS.length === 0 ? (
+      {availableOrders.length === 0 ? (
         <EmptyState variant="no-orders" />
       ) : (
         <>
@@ -85,13 +95,17 @@ export function InsuranceList() {
             onSort={setSort}
           />
           {filteredOrders.length === 0 ? (
-            <EmptyState
-              variant="no-match"
-              onClear={() => {
-                setSearch("");
-                setSort("closes");
-              }}
-            />
+            hasSearch ? (
+              <EmptyState
+                variant="no-match"
+                onClear={() => {
+                  setSearch("");
+                  setSort("closes");
+                }}
+              />
+            ) : (
+              <EmptyState variant="no-orders" />
+            )
           ) : (
             <div className="order-grid">
               {filteredOrders.map((order, i) => (
