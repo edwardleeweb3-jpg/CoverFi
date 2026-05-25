@@ -102,10 +102,11 @@ starts.
 
 ## 5. Current status
 
-Steps **1–10 are complete and pushed to `main`**. Each step has its own
-commit. Latest:
+**Segment 2 (frontend rebuild) is complete.** Steps **1–11 are all done
+and pushed to `main`**. Each step has its own commit. Latest:
 
 ```
+2ed93b2 feat: step 11 — responsive QA and finishing polish
 0de8e27 feat: step 10 — policy detail page
 1f9bfda feat: step 9 — policies overview page
 ba12aad feat: step 8 — insurance review and confirm page
@@ -118,7 +119,9 @@ f8cf7f4 feat: step 2 — providers and UI primitives
 076adf9 feat: step 1 — design tokens, fonts, theme system
 ```
 
-**Step 11 has NOT started.** That is the next step.
+**Next: Segment 3 — Database (Supabase).** See §8 for what that
+encompasses. Segment 2 work (any further frontend polish) is closed
+unless a specific issue surfaces.
 
 The end-to-end happy path runs in simulation: connect wallet (real wagmi,
 MetaMask) → browse insurable orders → review → pay → mock policy minted →
