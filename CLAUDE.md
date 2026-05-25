@@ -102,8 +102,20 @@ starts.
 
 ## 5. Current status
 
-**Segment 2 (frontend rebuild) is complete.** Steps **1–11 are all done
-and pushed to `main`**. Each step has its own commit. Latest:
+**Segment 3 (database / Supabase) is complete.** Combined with Segment 2,
+that's frontend + persistent storage shipped and on `main`.
+
+**Segment 3 commits (5 steps):**
+
+```
+4ee795a feat: db step 5 — persist claims to Supabase
+49fe117 feat: db step 4 — read policies from Supabase
+695bd4f feat: db step 3 — persist new policies to Supabase
+a9e84c7 feat: db step 2 — add policies table schema
+fd70946 feat: db step 1 — install Supabase client and connection config
+```
+
+**Segment 2 commits (11 steps):**
 
 ```
 2ed93b2 feat: step 11 — responsive QA and finishing polish
@@ -119,14 +131,25 @@ f8cf7f4 feat: step 2 — providers and UI primitives
 076adf9 feat: step 1 — design tokens, fonts, theme system
 ```
 
-**Next: Segment 3 — Database (Supabase).** See §8 for what that
-encompasses. Segment 2 work (any further frontend polish) is closed
-unless a specific issue surfaces.
+**Next: Segment 4 — Smart contracts.** See §8 for scope. Segments 2 + 3
+are closed unless a specific issue surfaces.
 
-The end-to-end happy path runs in simulation: connect wallet (real wagmi,
-MetaMask) → browse insurable orders → review → pay → mock policy minted →
-land on policy detail → claim → balance + lists update everywhere via
-Zustand.
+### Simulation vs. real — current boundary
+
+| Piece                         | Where it lives now              |
+|-------------------------------|---------------------------------|
+| Policy create / read / claim  | **Supabase `policies` table**   |
+| User balance                  | In-memory `useSimulationStore` (no DB table) |
+| Activity feed                 | In-memory `useSimulationStore` (no DB table; PRD §5.3 reserved for later) |
+| Markets / Signa orders        | Seed data in `lib/mock/{orders,policies}.ts` (PRD §5.1 / §7 reserved for later) |
+| Wallet connection             | Real wagmi (BSC Testnet, MetaMask injected) |
+| On-chain mint / claim         | Not wired — Segment 4 |
+
+End-to-end happy path: connect wallet → browse seeded Signa orders →
+review → pay → policy row inserted into Supabase → land on detail page
+(reads row back from DB) → claim → DB row's `claimed` + `status`
+updated → refresh persists everything except balance / activity (which
+reset to seed on reload, by design until those tables land).
 
 ## 6. Working conventions (HARD requirements)
 
@@ -142,10 +165,12 @@ Zustand.
   premium / release / claim formulas. `lib/pricing.ts` has inline PRD
   section pointers (`§3.2`, `§3.3`) — keep them current if helpers
   change.
-- **Simulation, not contracts.** Step 5 connected a real wallet, but
-  balance / mint / claim flows are all in-memory via
-  `useSimulationStore`. Real on-chain calls are explicitly out of
-  scope for the current phase (see §8 below). Do NOT prematurely:
+- **Simulation, not contracts.** Wallet connection is real, and
+  policy rows now persist to Supabase (Segment 3). But balance /
+  Activity remain in-memory in `useSimulationStore`, and no on-chain
+  transaction is ever sent — mint / claim are simulated "payments"
+  that just write to the DB. Real on-chain calls are Segment 4. Do
+  NOT prematurely:
   - switch `number` USDC amounts to `bigint` wei
   - read real USDC balance via `useBalance`
   - introduce token-contract addresses
@@ -206,16 +231,35 @@ src/
     brand-svg-defs.tsx       hidden <svg> with #mk and #signa symbol defs
 
   stores/                    theme, locale, wallet (UI flow only), toast, simulation
-  hooks/                     useT, useInView
+  hooks/                     useT, useInView, useHasMounted
   lib/
     i18n/                    en.ts (source of truth), zh.ts, types.ts, index.ts
     mock/                    orders.ts, policies.ts, activity.ts, index.ts
+                             (orders + activity still seed-only; `policies.ts`
+                             type defs are still load-bearing — actual policy
+                             rows now come from Supabase, not this seed)
+    db/
+      policies.ts            Supabase data-access layer: insertPolicy(),
+                             listPoliciesByOwner(), getPolicyById(),
+                             updatePolicyClaim() + DB-row → Policy mapper
+                             (numeric → number, timestamptz → days-ago).
+                             All writes lowercase the wallet address; reads
+                             scope by owner_address.
     config.ts                Q_DEFAULT, F, RELEASE_DAYS, getPricingQ() async stub
     pricing.ts               kOf, premiumOf, releasedOf, claimableOf, bucketOf
     wagmi.ts                 BSC Testnet + injected() config
+    supabase.ts              Singleton Supabase client (browser SDK only —
+                             no @supabase/ssr; identity is the wallet
+                             address, not Supabase Auth)
     format.ts                shortAddress, money, pct
 
 public/wallets/metamask.svg   official MetaMask fox SVG (used in picker)
+
+supabase/
+  schema.sql                  Single source of truth for the DB schema —
+                              `policies` table (PRD §5.2), CHECK constraints,
+                              owner_address index, demo-phase RLS policies.
+                              Apply via the Supabase SQL editor.
 
 _docs/                        PRD.md + prototype.html (1:1 baseline)
 memory/                       In-session Claude Code memory artifacts from the
@@ -223,44 +267,64 @@ memory/                       In-session Claude Code memory artifacts from the
                               and NOT part of the application. The rules they
                               contain are already mirrored in §6 above — read
                               §6, ignore memory/.
+
+.env.local                    (NOT in git — `.gitignore` covers `.env*`)
+                              Required to run locally. Two vars:
+                                NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+                                NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
+                              Both are public-safe (RLS gates real access).
+                              Ask the project owner for current values.
 ```
 
 Notes:
 - The wallet store **only tracks UI flow** (`idle` / `picker` /
   `connecting`). Real connection state (`isConnected`, `address`,
   `chainId`) comes from wagmi's `useAccount` / `useChainId`.
-- The simulation store owns `balance` (default 2450 USDC), `policies`
-  (seeded from `lib/mock/policies`), `activities`, `insuredOrderIds`,
-  `nextPolicyCounter` (starts at 232). Mutations: `mintPolicy`,
-  `claimPolicy`, `claimAll`.
+- The simulation store still owns `balance` (default 2450 USDC),
+  `activities`, `insuredOrderIds`, `nextPolicyCounter` (starts at
+  232) and the in-memory `policies` slice. The policies slice is
+  **no longer read by /policies or the detail page** (they read
+  from Supabase via `lib/db/policies.ts`); it's kept around so the
+  store-side `claimPolicy` / `claimAll` mirrors can update balance
+  + activity for in-session-minted rows. Mint flow: `insertPolicy()`
+  (DB) → `mintPolicy(id, …)` (store). Claim flow: `updatePolicyClaim()`
+  (DB) → `claimPolicy(id)` / `claimAll()` (store mirror).
 - `globals.css` is large but organised top-to-bottom by feature.
   Search for the section comment (e.g. `/* === Portfolio ... */`)
   before adding new CSS. Always honor the "one @media block per
   breakpoint" rule.
 
-## 8. After step 11
+## 8. Remaining segments
 
-Per PRD §10, the broader v1 scope still requires (these are future
-phases, NOT part of step 11):
+Per PRD §10, the broader v1 scope still has these segments ahead of us.
+Segments 2 (frontend) and 3 (database) are done — see §5.
 
-- **Database** (Supabase / Neon) — `markets` / `policies` / `activities`
-  / `config` tables per PRD §5. Backed by Next.js API routes that
-  index on-chain events.
-- **Smart contracts** — `CoverFiPolicy.sol` per PRD §8: `buyPolicy`,
-  `triggerSettlement`, `claim`. Deployed to BSC Testnet,
-  AI-audited per PRD §8.3.
-- **Real contract wiring** — replace simulated `mintPolicy` /
-  `claimPolicy` / `claimAll` actions in `src/stores/simulation.ts`
-  with wagmi `useWriteContract` calls. **Switch all `number` USDC
-  amounts to `bigint` wei** per PRD §3.2 precision requirement;
-  `lib/pricing.ts` will need bigint variants of `premiumOf` /
-  `releasedOf` / `claimableOf`.
-- **Signa adapter** (PRD §7) — once Signa documentation lands.
-  Replaces `lib/mock/orders.ts` with real Signa-sourced orders behind
-  the adapter interface stubbed in PRD §7.1.
-- **Admin backend** (PRD §4A) — dedicated `/admin/*` routes for
-  tuning `Q` and managing the market whitelist. `lib/config.ts`
-  exposes `getPricingQ()` as an async stub so the swap is one line at
-  the call sites.
+- **Segment 4 — Smart contracts (next).** `CoverFiPolicy.sol` per
+  PRD §8: `buyPolicy`, `triggerSettlement`, `claim`. Deployed to
+  BSC Testnet, AI-audited per PRD §8.3. Then **real contract
+  wiring** — replace the simulated mint / claim "payments" with
+  wagmi `useWriteContract` calls; the DB persistence layer added
+  in Segment 3 becomes the indexer for emitted events instead of
+  the primary writer. **Switch all `number` USDC amounts to
+  `bigint` wei** per PRD §3.2 precision requirement; `lib/pricing.ts`
+  will need bigint variants of `premiumOf` / `releasedOf` /
+  `claimableOf`. Also: pull real USDC balance via `useBalance`,
+  retire the in-memory `balance` slice.
+- **Segment 5 — Signa adapter** (PRD §7) — once Signa documentation
+  lands. Replaces `lib/mock/orders.ts` with real Signa-sourced
+  orders behind the adapter interface stubbed in PRD §7.1. The
+  `markets` table (PRD §5.1) likely lands here too, replacing the
+  denormalised bilingual market/option columns currently on
+  `policies` with a proper FK.
+- **Segment 6 — Admin backend** (PRD §4A) — dedicated `/admin/*`
+  routes for tuning `Q` and managing the market whitelist (and a
+  `config` table per PRD §4A.5). `lib/config.ts` exposes
+  `getPricingQ()` as an async stub so the swap is one line at the
+  call sites.
+- **Activity persistence** — PRD §5.3 reserves an `activities` table;
+  the in-memory activity feed gets backed by it (probably alongside
+  Segment 4 so it indexes real on-chain events).
 
-None of the above is in scope for step 11. Step 11 is frontend QA only.
+Segment boundaries are negotiable as priorities shift, but the
+"contracts next" call is firm — everything else is easier to wire
+up once the on-chain truth exists.
