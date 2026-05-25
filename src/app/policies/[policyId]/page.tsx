@@ -1,26 +1,15 @@
-import Link from "next/link";
+import { PolicyDetailPage } from "@/components/policies/detail/PolicyDetailPage";
 
 /**
- * Policy detail placeholder. Real implementation in step 10
- * (certificate + release curve + timeline).
+ * /policies/[policyId] — single-policy detail. Server shell awaits the
+ * Promise-based params (Next.js 15+), then hands off to the client
+ * component for wagmi gate + simulation-store-driven rendering.
  */
-export default async function PolicyPage({
+export default async function Page({
   params,
 }: {
   params: Promise<{ policyId: string }>;
 }) {
   const { policyId } = await params;
-  return (
-    <div className="page wrap">
-      <div className="crumb">
-        <Link href="/policies">My Policies · 我的保单</Link> / {policyId}
-      </div>
-      <h1 className="pagetitle">
-        Policy · 保单 · <span className="mono">{policyId}</span>
-      </h1>
-      <p className="pagesub" style={{ marginTop: 14 }}>
-        Placeholder — the contract + release curve + timeline ship in step 10.
-      </p>
-    </div>
-  );
+  return <PolicyDetailPage policyId={policyId} />;
 }
