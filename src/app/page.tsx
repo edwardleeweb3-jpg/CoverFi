@@ -1,15 +1,25 @@
+import { Hero } from "@/components/home/Hero";
+import { MetricBand } from "@/components/home/MetricBand";
+import { HowItWorks } from "@/components/home/HowItWorks";
+import { CoverageValues } from "@/components/home/CoverageValues";
+import { SupportedMarkets } from "@/components/home/SupportedMarkets";
+import { FAQ } from "@/components/home/FAQ";
+
 /**
- * Home placeholder. Step 4 replaces this with the full landing page
- * (hero + metrics band + how-it-works + coverage + supported markets + FAQ).
+ * Home page — 1:1 reconstruction of prototype's `views.home`.
+ * Each section is its own client component with its own scroll-reveal /
+ * count-up effects; this server-rendered shell just composes them in
+ * order so the page itself can stay static.
  */
 export default function HomePage() {
   return (
-    <div className="page wrap">
-      <h1 className="pagetitle">Home · 首页</h1>
-      <p className="pagesub" style={{ marginTop: 14 }}>
-        Placeholder for step 3 — site shell is now wired up (header / drawer /
-        footer + 5 real routes). The real home view ships in step 4.
-      </p>
-    </div>
+    <>
+      <Hero />
+      <MetricBand />
+      <HowItWorks />
+      <CoverageValues />
+      <SupportedMarkets />
+      <FAQ />
+    </>
   );
 }

@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx --yes create-next-app@latest . --typescript --tailwind --app --src-dir --turbopack --eslint --use-npm --import-alias \"@/*\" --yes)"
+      "Bash(npx --yes create-next-app@latest . --typescript --tailwind --app --src-dir --turbopack --eslint --use-npm --import-alias \"@/*\" --yes)",
+      "Bash(npx tsc *)"
     ]
   }
 }
