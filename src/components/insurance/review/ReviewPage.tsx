@@ -16,6 +16,7 @@ import { ORDERS } from "@/lib/mock";
 import { kOf, premiumOf } from "@/lib/pricing";
 import { RELEASE_DAYS } from "@/lib/config";
 import { money } from "@/lib/format";
+import { insertPolicy, type InsertPolicyResult } from "@/lib/db/policies";
 import { useSimulationStore } from "@/stores/simulation";
 import { useToast } from "@/stores/toast";
 import { PayCoverStripe } from "./PayCoverStripe";
@@ -28,8 +29,13 @@ interface Props {
   orderId: string;
 }
 
-/** Simulated mint delay, mirrors prototype's setTimeout. */
-const MINT_DELAY_MS = 1200;
+/**
+ * Cap on PK-collision retries when allocating a fresh CF-XXXXX. Each
+ * retry is a single round-trip; 25 comfortably covers a few concurrent
+ * fresh sessions racing on the same counter. If we ever see this cap
+ * tripped in practice, switch to a `SELECT max(id)` pre-seed.
+ */
+const MAX_ID_RETRIES = 25;
 
 /**
  * /insurance/review/[orderId] — confirm-and-pay screen.
@@ -40,14 +46,23 @@ const MINT_DELAY_MS = 1200;
  * pay flow:
  *   1. Verify balance ≥ payable; if not, open the insufficient-balance modal.
  *   2. Open a non-dismissible busy overlay (Spinner + "Minting policy").
- *   3. After MINT_DELAY_MS: mint via the simulation store (deducts balance,
- *      adds policy + activity, marks order as insured), close overlay,
- *      fire success toast, navigate to /policies/[newId].
+ *   3. Insert the policy into Supabase (with PK-collision retries —
+ *      see `insertPolicy()` in lib/db/policies.ts). On success, also
+ *      commit it to the in-memory simulation store so /policies and
+ *      the detail page (still reading from Zustand at this step) stay
+ *      consistent.
+ *   4. Navigate to /policies/[newId].
+ *
+ *   - DB failure (network / unexpected)         → open save-failed modal.
+ *   - Order already insured by another session  → open order-taken modal.
+ *
+ * Read paths still hit `useSimulationStore`; switching them to the DB
+ * is the next step.
  */
 export function ReviewPage({ orderId }: Props) {
   const t = useT();
   const { lang } = useLocale();
-  const { isConnected, status } = useAccount();
+  const { isConnected, status, address } = useAccount();
   const mounted = useHasMounted();
   const balance = useSimulationStore((s) => s.balance);
   const insuredOrderIds = useSimulationStore((s) => s.insuredOrderIds);
@@ -57,6 +72,8 @@ export function ReviewPage({ orderId }: Props) {
 
   const [busy, setBusy] = useState(false);
   const [errorOpen, setErrorOpen] = useState(false);
+  const [saveFailedOpen, setSaveFailedOpen] = useState(false);
+  const [orderTakenOpen, setOrderTakenOpen] = useState(false);
 
   // Gate before doing anything else — disconnected users see the locked
   // preview (reused from /insurance for visual continuity). Defer the
@@ -80,19 +97,59 @@ export function ReviewPage({ orderId }: Props) {
   const mkt = lang === "zh" ? order.mZh : order.mEn;
   const opt = lang === "zh" ? order.optZh : order.optEn;
 
-  const handlePay = () => {
+  const handlePay = async () => {
     if (busy) return;
     if (pr.payable > balance) {
       setErrorOpen(true);
       return;
     }
+    // `address` is guaranteed defined once isConnected is true (wagmi
+    // invariant), but TS doesn't track that — explicit guard.
+    if (!address) return;
+
     setBusy(true);
-    setTimeout(() => {
-      const id = mintPolicy(order, pr.payable, k);
-      setBusy(false);
-      showToast(t.minted(id), { kind: "info" });
-      router.push(`/policies/${id}`);
-    }, MINT_DELAY_MS);
+
+    // ID generation: start from the store's counter (hint) and bump on
+    // each PK collision until the DB accepts it. The store counter is
+    // a per-session optimistic hint; the DB is the source of truth.
+    let counter = useSimulationStore.getState().nextPolicyCounter;
+    let confirmedId: string | null = null;
+    let lastResult: InsertPolicyResult | null = null;
+
+    for (let attempt = 0; attempt < MAX_ID_RETRIES; attempt++) {
+      const candidate = `CF-00${counter}`;
+      lastResult = await insertPolicy({
+        id: candidate,
+        ownerAddress: address,
+        order,
+        premium: pr.payable,
+        k,
+      });
+      if (lastResult.ok) {
+        confirmedId = candidate;
+        break;
+      }
+      if (lastResult.reason === "id-taken") {
+        counter += 1;
+        continue;
+      }
+      break; // order-already-insured or other — terminal, fall through
+    }
+
+    setBusy(false);
+
+    if (confirmedId) {
+      mintPolicy(confirmedId, order, pr.payable, k);
+      showToast(t.minted(confirmedId), { kind: "info" });
+      router.push(`/policies/${confirmedId}`);
+      return;
+    }
+
+    if (lastResult && !lastResult.ok && lastResult.reason === "order-already-insured") {
+      setOrderTakenOpen(true);
+    } else {
+      setSaveFailedOpen(true);
+    }
   };
 
   return (
@@ -175,6 +232,43 @@ export function ReviewPage({ orderId }: Props) {
           block
           className="mt-3"
           onClick={() => setErrorOpen(false)}
+        >
+          {t.dismiss}
+        </Button>
+      </Modal>
+
+      {/* DB write failed (network / unexpected). Dismiss + click Pay
+          again to retry — the in-memory store hasn't been touched. */}
+      <Modal
+        open={saveFailedOpen}
+        onClose={() => setSaveFailedOpen(false)}
+        title={t.errSaveTitle}
+      >
+        <div className="errbox">{t.errSaveMsg}</div>
+        <Button
+          variant="ghost"
+          block
+          className="mt-3"
+          onClick={() => setSaveFailedOpen(false)}
+        >
+          {t.dismiss}
+        </Button>
+      </Modal>
+
+      {/* Another session beat us to this Signa order (unique constraint
+          on `signa_order_id`). Terminal — user should pick a different
+          order from /insurance. */}
+      <Modal
+        open={orderTakenOpen}
+        onClose={() => setOrderTakenOpen(false)}
+        title={t.errOrderTakenTitle}
+      >
+        <div className="errbox">{t.errOrderTakenMsg}</div>
+        <Button
+          variant="ghost"
+          block
+          className="mt-3"
+          onClick={() => setOrderTakenOpen(false)}
         >
           {t.dismiss}
         </Button>

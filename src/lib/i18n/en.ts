@@ -233,6 +233,12 @@ export const en = {
   errInsufTitle: "Insufficient balance",
   errInsufMsg: (need: string, have: string) =>
     `This policy requires ${need} USDC in premium, but your wallet holds ${have} USDC. Add funds and try again.`,
+  errSaveTitle: "Couldn't save your policy",
+  errSaveMsg:
+    "Something went wrong saving your policy. Check your connection and try again.",
+  errOrderTakenTitle: "Order already insured",
+  errOrderTakenMsg:
+    "This Signa order has already been insured. Refresh the insurance list to see what's still available.",
   dismiss: "Dismiss",
   searchPh: "Search market or ID",
   sortPremiumHi: "Premium ↓",

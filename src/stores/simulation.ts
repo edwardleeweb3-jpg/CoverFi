@@ -37,15 +37,17 @@ interface SimulationStore {
   nextPolicyCounter: number;
 
   /**
-   * Mint a policy on a Signa order. Deducts the premium from balance,
-   * prepends an activity entry, marks the order as insured, increments
-   * the policy counter. Returns the new policy's id (`CF-00XXX`).
+   * Commit a freshly-minted policy to the in-memory store. Deducts
+   * the premium from balance, prepends an activity entry, marks the
+   * order as insured, and advances `nextPolicyCounter` past the just-
+   * confirmed id.
    *
-   * Caller is responsible for verifying `balance >= premium` before
-   * calling — this action does not re-check (it gets called from the
-   * pay-button handler which already validated).
+   * The id is supplied externally (by the review-page flow, which
+   * confirms uniqueness against the Supabase `policies` table before
+   * calling). Caller is also responsible for verifying `balance >=
+   * premium` before calling — this action does not re-check.
    */
-  mintPolicy: (order: Order, premium: number, k: number) => string;
+  mintPolicy: (id: string, order: Order, premium: number, k: number) => void;
 
   /**
    * Claim everything released-so-far on a single policy. Updates that
@@ -68,6 +70,19 @@ const INITIAL_BALANCE = 2450;
 /** Matches prototype's `polCounter = 232` — next mint is CF-00232. */
 const INITIAL_POLICY_COUNTER = 232;
 
+/**
+ * Parse the numeric counter from a "CF-00XXX" id, or null if the id
+ * is foreign. Used to keep `nextPolicyCounter` past any externally-
+ * confirmed id (the review-page flow may bump past a few collisions
+ * before the DB accepts an insert).
+ */
+function parsePolicyCounter(id: string): number | null {
+  const m = id.match(/^CF-00(\d+)$/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 export const useSimulationStore = create<SimulationStore>((set, get) => ({
   balance: INITIAL_BALANCE,
   policies: [...POLICIES],
@@ -75,10 +90,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   insuredOrderIds: new Set<string>(),
   nextPolicyCounter: INITIAL_POLICY_COUNTER,
 
-  mintPolicy: (order, premium, k) => {
-    const counter = get().nextPolicyCounter;
-    const id = `CF-00${counter}`;
-
+  mintPolicy: (id, order, premium, k) => {
     const newPolicy: Policy = {
       id,
       order: order.id,
@@ -106,16 +118,22 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     set((s) => {
       const nextInsured = new Set(s.insuredOrderIds);
       nextInsured.add(order.id);
+      // Counter advances past the just-confirmed id but never
+      // backwards — keeps it monotonic if ids arrive out of sequence
+      // (e.g. after a retry burst).
+      const fromId = parsePolicyCounter(id);
+      const nextCounter = Math.max(
+        s.nextPolicyCounter,
+        fromId !== null ? fromId + 1 : s.nextPolicyCounter + 1,
+      );
       return {
         balance: s.balance - premium,
         policies: [newPolicy, ...s.policies],
         activities: [newActivity, ...s.activities],
         insuredOrderIds: nextInsured,
-        nextPolicyCounter: counter + 1,
+        nextPolicyCounter: nextCounter,
       };
     });
-
-    return id;
   },
 
   claimPolicy: (policyId) => {
