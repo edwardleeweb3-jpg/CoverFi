@@ -1,0 +1,20 @@
+# Hardhat outputs
+node_modules
+artifacts
+cache
+coverage
+coverage.json
+typechain
+typechain-types
+
+# Hardhat Ignition: the module file (ignition/modules/*.ts) is
+# checked in, but per-network deployment state under
+# ignition/deployments/ is local and varies per deploy.
+ignition/deployments
+
+# Local environment. The parent .gitignore already covers `.env*`
+# repo-wide; the negation below re-includes `.env.example` so the
+# template file stays tracked here (child .gitignore overrides
+# parent for git's matching rules).
+.env
+!.env.example
