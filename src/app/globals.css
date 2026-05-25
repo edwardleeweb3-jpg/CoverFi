@@ -70,12 +70,12 @@
 
 /* ============================================================
    Tailwind theme bridge — exposes our CSS vars as utilities:
-   bg-ink / bg-surface / bg-surface-2 / bg-surface-3
-   border-line / border-line-2 / border-line-3
-   text-text / text-text-2 / text-text-3
-   text-signal / text-signal-2 / bg-signal-soft
-   text-good / bg-good-soft   text-bad / bg-bad-soft   text-warn / bg-warn-soft
-   rounded-s / rounded-m / rounded-l   font-sans / font-mono
+     bg-ink / bg-surface / bg-surface-2 / bg-surface-3
+     border-line / border-line-2 / border-line-3
+     text-text / text-text-2 / text-text-3
+     text-signal / text-signal-2 / bg-signal-soft
+     text-good / bg-good-soft   text-bad / bg-bad-soft   text-warn / bg-warn-soft
+     rounded-s / rounded-m / rounded-l   font-sans / font-mono
    ============================================================ */
 @theme inline {
   --color-ink: var(--ink);
@@ -108,20 +108,13 @@
 }
 
 /* ============================================================
-   Base resets + page background.
-
-   Background is painted on BOTH <html> and <body>:
-   - <html> paints the viewport "canvas" — survives any case where
-     <body> doesn't extend to the full viewport.
-   - <body> paints itself for in-flow content.
-   Both reference --ink, which switches via :root[data-theme="..."].
+   Base resets + page background (painted on both <html> and <body>).
+   Note: we DON'T write a custom `* { padding:0; margin:0 }` reset here.
+   Tailwind v4's preflight already does this inside `@layer base`. If we
+   wrote it outside any layer, it would beat the `px-*` / `py-*` utilities
+   (which live in `@layer utilities`) and silently zero out padding
+   everywhere — segmented controls and arbitrary-padded elements mash up.
    ============================================================ */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
 html,
 body {
   min-height: 100%;
@@ -173,4 +166,416 @@ button {
 
 .mono {
   font-family: var(--mono);
+}
+
+/* ============================================================
+   Keyframes used by primitives.
+   ============================================================ */
+@keyframes fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pop {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes sheet {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* ============================================================
+   Button — prototype `.btn` + variants.
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--r-s);
+  padding: 10px 17px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    transform 0.14s var(--ease),
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.2s var(--ease),
+    opacity 0.15s;
+}
+.btn:active { transform: scale(0.98); }
+.btn[disabled] { opacity: 0.35; cursor: not-allowed; }
+.btn[disabled]:hover { transform: none; box-shadow: none; }
+
+.btn-primary {
+  background: var(--text);
+  color: var(--ink);
+  font-weight: 600;
+}
+.btn-primary:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.5);
+}
+.btn-primary[disabled]:hover { filter: none; }
+
+.btn-ghost {
+  border: 1px solid var(--line-2);
+  color: var(--text);
+}
+.btn-ghost:hover {
+  border-color: var(--line-3);
+  background: var(--surface-2);
+}
+
+.btn-sm { padding: 8px 13px; font-size: 13px; }
+.btn-block { width: 100%; padding: 13px; }
+
+/* ============================================================
+   Badge — prototype `.badge` + `.b-sig` / `.b-good`.
+   ============================================================ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 2px;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.badge .d {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.badge.b-sig {
+  color: var(--signal-2);
+  border-color: rgba(85, 119, 255, 0.38);
+  background: var(--signal-soft);
+}
+.badge.b-good {
+  color: var(--good);
+  border-color: rgba(63, 176, 121, 0.36);
+  background: var(--good-soft);
+}
+
+/* ============================================================
+   Chip + Tag (mono pill metadata).
+   ============================================================ */
+.chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-s);
+  padding: 3px 7px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 2px;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+}
+
+/* ============================================================
+   Card + Panel.
+   ============================================================ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-m);
+}
+.panel { padding: 24px; }
+.panel h4 {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 400;
+}
+.panel h4::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border-radius: 2px;
+  border: 1px solid var(--line-3);
+  background: linear-gradient(var(--signal), var(--signal)) no-repeat 2px 2px;
+  background-size: 3.4px 3.4px;
+}
+.panel h4::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* ============================================================
+   Modal + overlay + (mobile) bottom sheet.
+   ============================================================ */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-bg);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fade 0.18s var(--ease);
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-l);
+  max-width: 412px;
+  width: 100%;
+  animation: pop 0.24s var(--ease);
+}
+.modal-h { padding: 20px 22px 0; }
+.modal-h h3 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.modal-h p {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+.modal-b { padding: 16px 22px 22px; }
+
+/* ── Wallet picker option (used inside .modal-b) ─────────────── */
+.wallet-opt {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-m);
+  padding: 14px;
+  margin-top: 9px;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.12s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.wallet-opt:hover {
+  border-color: var(--line-3);
+  background: var(--surface-2);
+}
+.wallet-opt:active {
+  transform: scale(0.99);
+}
+.wallet-opt .ic {
+  width: 34px;
+  height: 34px;
+  border-radius: 2px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 15px;
+  color: #fff;
+}
+.wallet-opt .wn {
+  font-size: 14px;
+  font-weight: 500;
+}
+.wallet-opt .wd {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+.wallet-opt .arr {
+  margin-left: auto;
+  color: var(--text-3);
+  display: inline-flex;
+}
+
+/* ── Status modal (non-dismissible, used during "connecting…") ── */
+.modal-status {
+  padding: 26px 22px;
+  text-align: center;
+}
+.modal-status .spinner {
+  margin: 8px auto 16px;
+}
+.modal-status h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.modal-status p {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-top: 5px;
+}
+
+/* On mobile the wallet-opt button needs the option's flex children
+   to size correctly inside the bottom sheet. */
+@media (max-width: 680px) {
+  .wallet-opt {
+    padding: 15px;
+  }
+  .wallet-opt .ic {
+    width: 38px;
+    height: 38px;
+  }
+}
+
+/* ============================================================
+   Skeleton (shimmer).
+   ============================================================ */
+.skel {
+  background: var(--surface-2);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--hairtex), transparent);
+  transform: translateX(-100%);
+  animation: shimmer 1.3s infinite;
+}
+
+/* ============================================================
+   Spinner.
+   ============================================================ */
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 2.5px solid var(--line-2);
+  border-top-color: var(--signal);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.spinner-sm {
+  width: 13px;
+  height: 13px;
+  border-width: 2px;
+  animation-duration: 0.7s;
+  display: block;
+}
+
+/* ============================================================
+   Toast.
+   ============================================================ */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(24px);
+  z-index: 95;
+  background: var(--surface-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-m);
+  padding: 11px 15px;
+  font-size: 13px;
+  font-family: var(--mono);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: 0.24s var(--ease);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  max-width: 380px;
+  pointer-events: none;
+}
+.toast.show {
+  transform: translateX(-50%);
+  opacity: 1;
+  pointer-events: auto;
+}
+.toast .tdot {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  background: var(--good);
+  flex: none;
+}
+.toast.t-info .tdot { background: var(--signal); }
+.toast.t-err .tdot { background: var(--bad); }
+.toast .tbody { min-width: 0; }
+.toast .tmain { color: var(--text); }
+.toast .tsub {
+  display: block;
+  color: var(--text-3);
+  font-size: 11px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================
+   Responsive — modal becomes a bottom sheet, toast pins down.
+   ============================================================ */
+@media (max-width: 680px) {
+  .overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal {
+    max-width: none;
+    border-radius: var(--r-l) var(--r-l) 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    animation: sheet 0.3s var(--ease);
+  }
+  .modal::before {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line-3);
+    margin: 10px auto 2px;
+  }
+
+  .toast {
+    bottom: calc(env(safe-area-inset-bottom, 0) + 18px);
+    width: calc(100% - 40px);
+    max-width: none;
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel::after { animation: none; }
 }

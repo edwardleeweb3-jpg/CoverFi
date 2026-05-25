@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { BrandSvgDefs } from "@/components/brand-svg-defs";
+import { AppProviders } from "@/components/providers/AppProviders";
 import "./globals.css";
 
 const plexSans = IBM_Plex_Sans({
@@ -50,7 +51,7 @@ export default function RootLayout({
       </head>
       <body>
         <BrandSvgDefs />
-        {children}
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );
