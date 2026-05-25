@@ -9,9 +9,12 @@ import { getAddress, keccak256, parseUnits, toHex } from "viem";
  * + buyPolicy) coverage. triggerSettlement / claim get added in B4 / B5.
  */
 describe("CoverFiPolicy", async function () {
-  const { viem } = await network.create();
-  const [deployer, admin, settler, attacker, alice] =
+  const { viem, networkHelpers } = await network.create();
+  const [deployer, admin, settler, attacker, alice, bob] =
     await viem.getWalletClients();
+
+  /** Linear-release period mirrored from the contract (365 days, in s). */
+  const RELEASE_PERIOD = 365n * 24n * 60n * 60n;
 
   /** USDC base unit at 6 decimals. */
   const USDC = (n: string | number) => parseUnits(String(n), 6);
@@ -819,6 +822,512 @@ describe("CoverFiPolicy", async function () {
         "PolicyNotFound",
         [999n],
       );
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // releasedOf / claimableOf / claim — PRD §3.3.
+  //
+  // Exact numerical anchors (principal = 1000 USDC, RELEASE_PERIOD =
+  // 31_536_000 seconds):
+  //   elapsed =       0 →   0       USDC released
+  //   elapsed = period/2 → 500       USDC released  (= a × 1/2)
+  //   elapsed = period   → 1000      USDC released  (cap)
+  //   elapsed > period   → 1000      USDC released  (still cap)
+  //
+  // For exact assertions on `claim`, we use `setNextBlockTimestamp`
+  // to align the claim tx itself to the target timestamp (otherwise
+  // Hardhat adds +1s per tx and the elapsed slips by a second).
+  // ────────────────────────────────────────────────────────────────
+  describe("release math + claim", async function () {
+    /** Mint + settle Miss; returns settledAt so timing helpers can pin
+     *  block timestamps relative to it. The contract is pre-funded with
+     *  extra USDC (PRD §8.2: testnet payout pool is project-injected)
+     *  so a 100% claim doesn't run out of balance — premiums alone
+     *  cover only ~30% of payout in our standard test sizing. */
+    async function setupSettledMiss() {
+      const { usdc, coverFi } = await deploy();
+      // Project-side payout pool injection (PRD §8.2).
+      await usdc.write.mint([coverFi.address, USDC(100_000)]);
+
+      await usdc.write.mint([alice.account.address, USDC(10_000)]);
+      const usdcAsAlice = await viem.getContractAt(
+        "MockUSDC",
+        usdc.address,
+        { client: { wallet: alice } },
+      );
+      await usdcAsAlice.write.approve([coverFi.address, USDC(10_000)]);
+      const coverFiAsAlice = await viem.getContractAt(
+        "CoverFiPolicy",
+        coverFi.address,
+        { client: { wallet: alice } },
+      );
+      await coverFiAsAlice.write.buyPolicy([
+        hash32("SGA-RELEASE"),
+        USDC(1000),
+        4100,
+        hash32("Yes"),
+      ]);
+      const coverFiAsSettler = await viem.getContractAt(
+        "CoverFiPolicy",
+        coverFi.address,
+        { client: { wallet: settler } },
+      );
+      await coverFiAsSettler.write.triggerSettlement([1n, 0 /* Miss */]);
+
+      const p = await coverFi.read.policies([1n]);
+      const settledAt = BigInt(p[4]);
+      return {
+        usdc,
+        coverFi,
+        coverFiAsAlice,
+        coverFiAsSettler,
+        usdcAsAlice,
+        policyId: 1n,
+        principal: USDC(1000),
+        premium: USDC(295),
+        settledAt,
+      };
+    }
+
+    /** Policy enum index mirror — keep in sync with the contract. */
+    const Status = {
+      Active: 0,
+      Releasing: 1,
+      Completed: 2,
+      Hit: 3,
+      Void: 4,
+    } as const;
+
+    describe("releasedOf / claimableOf views", async function () {
+      it("returns 0 right after settlement (elapsed = 0)", async function () {
+        const { coverFi, policyId } = await setupSettledMiss();
+        assert.equal(await coverFi.read.releasedOf([policyId]), 0n);
+        assert.equal(await coverFi.read.claimableOf([policyId]), 0n);
+      });
+
+      it("returns principal/2 at elapsed = RELEASE_PERIOD / 2", async function () {
+        const { coverFi, policyId, principal, settledAt } =
+          await setupSettledMiss();
+        const half = RELEASE_PERIOD / 2n;
+        await networkHelpers.time.increaseTo(Number(settledAt + half));
+        assert.equal(
+          await coverFi.read.releasedOf([policyId]),
+          principal / 2n,
+        );
+        assert.equal(
+          await coverFi.read.claimableOf([policyId]),
+          principal / 2n,
+        );
+      });
+
+      it("returns principal at elapsed = RELEASE_PERIOD (boundary)", async function () {
+        const { coverFi, policyId, principal, settledAt } =
+          await setupSettledMiss();
+        await networkHelpers.time.increaseTo(
+          Number(settledAt + RELEASE_PERIOD),
+        );
+        assert.equal(await coverFi.read.releasedOf([policyId]), principal);
+        assert.equal(await coverFi.read.claimableOf([policyId]), principal);
+      });
+
+      it("caps at principal beyond RELEASE_PERIOD", async function () {
+        const { coverFi, policyId, principal, settledAt } =
+          await setupSettledMiss();
+        await networkHelpers.time.increaseTo(
+          Number(settledAt + RELEASE_PERIOD * 2n),
+        );
+        assert.equal(await coverFi.read.releasedOf([policyId]), principal);
+      });
+
+      it("returns 0 for Active / Hit / Void / unknown policies", async function () {
+        // Fresh deploy — no policies, status enum 0 (Active default).
+        const { coverFi } = await deploy();
+        assert.equal(await coverFi.read.releasedOf([999n]), 0n);
+        assert.equal(await coverFi.read.claimableOf([999n]), 0n);
+
+        // Active policy (just minted, not settled).
+        const { coverFi: coverFi2 } = await deploy();
+        const usdc2 = await viem.getContractAt("MockUSDC", await coverFi2.read.usdc());
+        await usdc2.write.mint([alice.account.address, USDC(10_000)]);
+        const usdcAsAlice2 = await viem.getContractAt(
+          "MockUSDC",
+          usdc2.address,
+          { client: { wallet: alice } },
+        );
+        await usdcAsAlice2.write.approve([coverFi2.address, USDC(10_000)]);
+        const coverFiAsAlice2 = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi2.address,
+          { client: { wallet: alice } },
+        );
+        await coverFiAsAlice2.write.buyPolicy([
+          hash32("SGA-ACTIVE"),
+          USDC(1000),
+          4100,
+          hash32("Yes"),
+        ]);
+        assert.equal(await coverFi2.read.releasedOf([1n]), 0n);
+      });
+    });
+
+    describe("claim", async function () {
+      it("at 50% transfers principal/2 to owner; status stays Releasing", async function () {
+        const {
+          usdc,
+          coverFi,
+          coverFiAsAlice,
+          policyId,
+          principal,
+          settledAt,
+        } = await setupSettledMiss();
+
+        const aliceBefore = await usdc.read.balanceOf([
+          alice.account.address,
+        ]);
+        const contractBefore = await usdc.read.balanceOf([coverFi.address]);
+
+        const half = RELEASE_PERIOD / 2n;
+        // Align claim tx itself to exactly settledAt + half.
+        await networkHelpers.time.setNextBlockTimestamp(
+          Number(settledAt + half),
+        );
+
+        await viem.assertions.emitWithArgs(
+          coverFiAsAlice.write.claim([policyId]),
+          coverFi,
+          "PolicyClaimed",
+          [policyId, getAddress(alice.account.address), principal / 2n],
+        );
+
+        // Owner credited exactly principal/2.
+        assert.equal(
+          await usdc.read.balanceOf([alice.account.address]),
+          aliceBefore + principal / 2n,
+        );
+        // Contract drained by the same.
+        assert.equal(
+          await usdc.read.balanceOf([coverFi.address]),
+          contractBefore - principal / 2n,
+        );
+        // claimed bumped, status still Releasing (not fully paid).
+        const p = await coverFi.read.policies([policyId]);
+        assert.equal(p[8], principal / 2n);
+        assert.equal(p[1], Status.Releasing);
+      });
+
+      it("at 100% transfers full principal and flips status to Completed", async function () {
+        const {
+          usdc,
+          coverFi,
+          coverFiAsAlice,
+          policyId,
+          principal,
+          settledAt,
+        } = await setupSettledMiss();
+
+        const aliceBefore = await usdc.read.balanceOf([
+          alice.account.address,
+        ]);
+        await networkHelpers.time.setNextBlockTimestamp(
+          Number(settledAt + RELEASE_PERIOD),
+        );
+        await coverFiAsAlice.write.claim([policyId]);
+
+        assert.equal(
+          await usdc.read.balanceOf([alice.account.address]),
+          aliceBefore + principal,
+        );
+        const p = await coverFi.read.policies([policyId]);
+        assert.equal(p[8], principal);
+        assert.equal(p[1], Status.Completed);
+      });
+
+      it("two claims (50% then 100%) accumulate to principal and Complete", async function () {
+        const {
+          usdc,
+          coverFi,
+          coverFiAsAlice,
+          policyId,
+          principal,
+          settledAt,
+        } = await setupSettledMiss();
+
+        const aliceBefore = await usdc.read.balanceOf([
+          alice.account.address,
+        ]);
+
+        // First claim at exactly 50%.
+        await networkHelpers.time.setNextBlockTimestamp(
+          Number(settledAt + RELEASE_PERIOD / 2n),
+        );
+        await coverFiAsAlice.write.claim([policyId]);
+
+        let p = await coverFi.read.policies([policyId]);
+        assert.equal(p[8], principal / 2n);
+        assert.equal(p[1], Status.Releasing);
+
+        // Second claim at exactly 100%.
+        await networkHelpers.time.setNextBlockTimestamp(
+          Number(settledAt + RELEASE_PERIOD),
+        );
+        await viem.assertions.emitWithArgs(
+          coverFiAsAlice.write.claim([policyId]),
+          coverFi,
+          "PolicyClaimed",
+          // Second claim's amount = released_now - claimed_so_far =
+          // principal - principal/2 = principal/2.
+          [policyId, getAddress(alice.account.address), principal / 2n],
+        );
+
+        p = await coverFi.read.policies([policyId]);
+        assert.equal(p[8], principal);
+        assert.equal(p[1], Status.Completed);
+        assert.equal(
+          await usdc.read.balanceOf([alice.account.address]),
+          aliceBefore + principal,
+        );
+      });
+
+      it("third claim on a Completed policy reverts with NothingToClaim", async function () {
+        const { coverFi, coverFiAsAlice, policyId, settledAt } =
+          await setupSettledMiss();
+
+        await networkHelpers.time.setNextBlockTimestamp(
+          Number(settledAt + RELEASE_PERIOD),
+        );
+        await coverFiAsAlice.write.claim([policyId]);
+
+        await viem.assertions.revertWithCustomErrorWithArgs(
+          coverFiAsAlice.write.claim([policyId]),
+          coverFi,
+          "NothingToClaim",
+          [policyId],
+        );
+      });
+
+      it("claim on Hit policy reverts with NothingToClaim", async function () {
+        // Fresh setup ending in Hit instead of Miss.
+        const { usdc, coverFi } = await deploy();
+        await usdc.write.mint([alice.account.address, USDC(10_000)]);
+        const usdcAsAlice = await viem.getContractAt(
+          "MockUSDC",
+          usdc.address,
+          { client: { wallet: alice } },
+        );
+        await usdcAsAlice.write.approve([coverFi.address, USDC(10_000)]);
+        const coverFiAsAlice = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi.address,
+          { client: { wallet: alice } },
+        );
+        await coverFiAsAlice.write.buyPolicy([
+          hash32("SGA-HIT-CLAIM"),
+          USDC(1000),
+          4100,
+          hash32("Yes"),
+        ]);
+        const coverFiAsSettler = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi.address,
+          { client: { wallet: settler } },
+        );
+        await coverFiAsSettler.write.triggerSettlement([1n, 1 /* Hit */]);
+
+        await viem.assertions.revertWithCustomErrorWithArgs(
+          coverFiAsAlice.write.claim([1n]),
+          coverFi,
+          "NothingToClaim",
+          [1n],
+        );
+      });
+
+      it("claim on Void policy reverts with NothingToClaim", async function () {
+        // Void already refunded premium in triggerSettlement; claim is
+        // not the right path and should reject.
+        const { usdc, coverFi } = await deploy();
+        await usdc.write.mint([alice.account.address, USDC(10_000)]);
+        const usdcAsAlice = await viem.getContractAt(
+          "MockUSDC",
+          usdc.address,
+          { client: { wallet: alice } },
+        );
+        await usdcAsAlice.write.approve([coverFi.address, USDC(10_000)]);
+        const coverFiAsAlice = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi.address,
+          { client: { wallet: alice } },
+        );
+        await coverFiAsAlice.write.buyPolicy([
+          hash32("SGA-VOID-CLAIM"),
+          USDC(1000),
+          4100,
+          hash32("Yes"),
+        ]);
+        const coverFiAsSettler = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi.address,
+          { client: { wallet: settler } },
+        );
+        await coverFiAsSettler.write.triggerSettlement([1n, 2 /* Void */]);
+
+        await viem.assertions.revertWithCustomErrorWithArgs(
+          coverFiAsAlice.write.claim([1n]),
+          coverFi,
+          "NothingToClaim",
+          [1n],
+        );
+      });
+
+      it("claim on Active policy reverts with NothingToClaim", async function () {
+        const { usdc, coverFi } = await deploy();
+        await usdc.write.mint([alice.account.address, USDC(10_000)]);
+        const usdcAsAlice = await viem.getContractAt(
+          "MockUSDC",
+          usdc.address,
+          { client: { wallet: alice } },
+        );
+        await usdcAsAlice.write.approve([coverFi.address, USDC(10_000)]);
+        const coverFiAsAlice = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi.address,
+          { client: { wallet: alice } },
+        );
+        await coverFiAsAlice.write.buyPolicy([
+          hash32("SGA-ACT-CLAIM"),
+          USDC(1000),
+          4100,
+          hash32("Yes"),
+        ]);
+
+        await viem.assertions.revertWithCustomErrorWithArgs(
+          coverFiAsAlice.write.claim([1n]),
+          coverFi,
+          "NothingToClaim",
+          [1n],
+        );
+      });
+
+      it("claim by non-owner reverts with NotPolicyOwner", async function () {
+        const { coverFi, policyId, settledAt } = await setupSettledMiss();
+        const coverFiAsBob = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi.address,
+          { client: { wallet: bob } },
+        );
+        await networkHelpers.time.increaseTo(
+          Number(settledAt + RELEASE_PERIOD / 2n),
+        );
+        await viem.assertions.revertWithCustomErrorWithArgs(
+          coverFiAsBob.write.claim([policyId]),
+          coverFi,
+          "NotPolicyOwner",
+          [policyId],
+        );
+      });
+
+      it("claim on an unknown policyId reverts with PolicyNotFound", async function () {
+        const { coverFi } = await deploy();
+        const coverFiAsAlice = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi.address,
+          { client: { wallet: alice } },
+        );
+        await viem.assertions.revertWithCustomErrorWithArgs(
+          coverFiAsAlice.write.claim([999n]),
+          coverFi,
+          "PolicyNotFound",
+          [999n],
+        );
+      });
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // Reentrancy probe — uses a custom ERC20 (ReentrantUSDC) whose
+    // `transfer()` re-enters `coverFi.claim()` when CoverFiPolicy is
+    // the caller (i.e. during the safeTransfer at the tail of claim).
+    // The probe passes iff the outer claim reverts with OZ's
+    // `ReentrancyGuardReentrantCall` — meaning the guard + CEI
+    // actually held.
+    // ──────────────────────────────────────────────────────────────
+    describe("reentrancy", async function () {
+      it("malicious ERC20 attempting re-entry into claim is blocked", async function () {
+        // Deploy CoverFiPolicy backed by the malicious token instead of MockUSDC.
+        const rusdc = await viem.deployContract("ReentrantUSDC");
+        const coverFi = await viem.deployContract("CoverFiPolicy", [
+          rusdc.address,
+          admin.account.address,
+          settler.account.address,
+          5000n,
+        ]);
+
+        // Faucet + approve. ARMED is false here, so transfer behaves normally.
+        await rusdc.write.mint([alice.account.address, USDC(10_000)]);
+        const rusdcAsAlice = await viem.getContractAt(
+          "ReentrantUSDC",
+          rusdc.address,
+          { client: { wallet: alice } },
+        );
+        await rusdcAsAlice.write.approve([coverFi.address, USDC(10_000)]);
+
+        // Alice mints a policy (premium pulled cleanly — still un-armed).
+        const coverFiAsAlice = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi.address,
+          { client: { wallet: alice } },
+        );
+        await coverFiAsAlice.write.buyPolicy([
+          hash32("SGA-REENTRY"),
+          USDC(1000),
+          4100,
+          hash32("Yes"),
+        ]);
+
+        // Settler settles Miss → status Releasing.
+        const coverFiAsSettler = await viem.getContractAt(
+          "CoverFiPolicy",
+          coverFi.address,
+          { client: { wallet: settler } },
+        );
+        await coverFiAsSettler.write.triggerSettlement([1n, 0 /* Miss */]);
+
+        // Read settledAt.
+        const p = await coverFi.read.policies([1n]);
+        const settledAt = BigInt(p[4]);
+
+        // Arm BEFORE setting the next-block timestamp — arm() mines a
+        // block; we want the claim tx itself (which mines next) to be
+        // the one positioned at settledAt + half.
+        await rusdc.write.arm([coverFi.address, 1n]);
+
+        // Position the claim tx so there IS something to claim
+        // (and a real safeTransfer happens that triggers re-entry).
+        await networkHelpers.time.setNextBlockTimestamp(
+          Number(settledAt + RELEASE_PERIOD / 2n),
+        );
+
+        // The outer claim should revert because the inner re-entry
+        // hits the reentrancy guard and bubbles up.
+        await viem.assertions.revertWithCustomError(
+          coverFiAsAlice.write.claim([1n]),
+          coverFi,
+          "ReentrancyGuardReentrantCall",
+        );
+
+        // Sanity: no state moved. Alice's RNT balance unchanged from
+        // post-mint; contract still holds the premium it took.
+        const aliceBalance = await rusdc.read.balanceOf([
+          alice.account.address,
+        ]);
+        const contractBalance = await rusdc.read.balanceOf([
+          coverFi.address,
+        ]);
+        assert.equal(aliceBalance, USDC(10_000) - USDC(295));
+        assert.equal(contractBalance, USDC(295));
+        const policyAfter = await coverFi.read.policies([1n]);
+        assert.equal(policyAfter[8], 0n); // claimed still 0
+        assert.equal(policyAfter[1], Status.Releasing);
+      });
     });
   });
 });

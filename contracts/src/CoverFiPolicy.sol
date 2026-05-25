@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title CoverFiPolicy
 /// @notice Principal insurance on Signa prediction-market orders.
@@ -14,7 +15,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 /// @dev    All economic math here is bps-based integer arithmetic to
 ///         satisfy PRD §3.2's "no floats for money" rule. Q, k, F are
 ///         stored / passed as basis points out of `BPS_DENOMINATOR`.
-contract CoverFiPolicy is AccessControl {
+contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ─── Enums ───────────────────────────────────────────────────
@@ -144,6 +145,16 @@ contract CoverFiPolicy is AccessControl {
     ///         status is included so the settler can diagnose without
     ///         a second RPC call.
     error PolicyNotActive(uint256 policyId, PolicyStatus currentStatus);
+
+    /// @notice Thrown when `claim` is called by an address other than
+    ///         the policy's owner.
+    error NotPolicyOwner(uint256 policyId);
+
+    /// @notice Thrown when `claim` is called and `claimableOf` returns 0.
+    ///         Covers: Active (not yet settled), Hit / Void (terminal,
+    ///         no payout), Completed (already fully claimed), Releasing
+    ///         but not enough time has elapsed since the last claim.
+    error NothingToClaim(uint256 policyId);
 
     // ─── Events ──────────────────────────────────────────────────
 
@@ -426,5 +437,93 @@ contract CoverFiPolicy is AccessControl {
             // ─ INTERACTIONS (Void only) ─
             usdc.safeTransfer(owner_, refund);
         }
+    }
+
+    // ─── Views: release math ─────────────────────────────────────
+
+    /// @notice Released principal at the current block.timestamp —
+    ///         PRD §3.3. Returns 0 for policies not in Releasing or
+    ///         Completed (Active = pre-settlement; Hit / Void are
+    ///         terminal with no payout).
+    ///
+    ///         Math is `principal * elapsed / RELEASE_PERIOD` with
+    ///         integer floor division, capped at `principal` once
+    ///         elapsed reaches RELEASE_PERIOD. The multiply-before-
+    ///         divide order matches PRD §3.2's "no float, no
+    ///         precision loss" rule.
+    function releasedOf(uint256 policyId) public view returns (uint256) {
+        Policy storage p = policies[policyId];
+        if (
+            p.status != PolicyStatus.Releasing &&
+            p.status != PolicyStatus.Completed
+        ) {
+            return 0;
+        }
+        // `settledAt` was written when the status moved to Releasing
+        // (or Completed, which is reached only via that path), so
+        // `block.timestamp >= settledAt` is guaranteed.
+        uint256 elapsed = block.timestamp - uint256(p.settledAt);
+        if (elapsed >= RELEASE_PERIOD) {
+            return p.principal;
+        }
+        return (p.principal * elapsed) / RELEASE_PERIOD;
+    }
+
+    /// @notice Amount the owner can `claim` right now — PRD §3.3.
+    ///         Defensive `≤` so a hypothetical `claimed` overrun
+    ///         surfaces as 0 (and `claim` rejects with NothingToClaim)
+    ///         rather than reverting on uint underflow.
+    function claimableOf(uint256 policyId) public view returns (uint256) {
+        uint256 released = releasedOf(policyId);
+        uint256 already = policies[policyId].claimed;
+        if (released <= already) return 0;
+        return released - already;
+    }
+
+    // ─── Owner: claim ────────────────────────────────────────────
+
+    /// @notice Withdraw any newly-released principal. Multiple claims
+    ///         over a policy's lifetime accumulate against `claimed`,
+    ///         which is bounded by `principal`. Once `claimed` reaches
+    ///         `principal` the policy transitions to `Completed`.
+    ///
+    ///         nonReentrant + strict CEI: all state mutations (claimed
+    ///         bump, status transition, event emit) happen before the
+    ///         `safeTransfer`, so a hostile ERC20 with a transfer hook
+    ///         cannot re-enter into a state where it gets paid twice.
+    ///         The reentrancy guard catches even subtle race paths the
+    ///         CEI alone might miss.
+    ///
+    /// @param policyId  Id from a prior `buyPolicy`.
+    function claim(uint256 policyId) external nonReentrant {
+        Policy storage p = policies[policyId];
+
+        // ─ CHECKS ─
+        if (p.owner == address(0)) revert PolicyNotFound(policyId);
+        if (msg.sender != p.owner) revert NotPolicyOwner(policyId);
+
+        uint256 amount = claimableOf(policyId);
+        if (amount == 0) revert NothingToClaim(policyId);
+
+        // ─ EFFECTS ─
+        uint256 newClaimed = p.claimed + amount;
+        p.claimed = newClaimed;
+        // Transition to terminal Completed exactly once: only when
+        // we've just credited the final wei AND we're currently in
+        // the in-progress state. Guards against accidental
+        // re-transition if claim were ever entered with status
+        // already Completed (impossible today — claimableOf would be
+        // 0 — but cheap insurance).
+        if (
+            newClaimed >= p.principal &&
+            p.status == PolicyStatus.Releasing
+        ) {
+            p.status = PolicyStatus.Completed;
+        }
+
+        emit PolicyClaimed(policyId, msg.sender, amount);
+
+        // ─ INTERACTIONS ─
+        usdc.safeTransfer(msg.sender, amount);
     }
 }
