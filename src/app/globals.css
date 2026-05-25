@@ -2,7 +2,7 @@
 
 /* ============================================================
    Design tokens — names match prototype 1:1.
-   Three explicit theme states; each fully defined to remove any
+   Three explicit theme states; each fully defined to avoid any
    reliance on a "default = dark" implicit fallback.
    ============================================================ */
 
@@ -26,8 +26,7 @@
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-/* Dark palette — applied both as the implicit default (`:root`) AND when
-   `data-theme="dark"` is explicit, so SSR/no-JS and explicit-dark match. */
+/* Dark palette — both the implicit default AND explicit data-theme="dark". */
 :root,
 :root[data-theme="dark"] {
   --ink: #08080a;
@@ -48,7 +47,7 @@
   --overlay-bg: rgba(5, 5, 7, 0.8);
 }
 
-/* Light palette — overrides the dark defaults when `data-theme="light"`. */
+/* Light palette — overrides dark defaults when data-theme="light". */
 :root[data-theme="light"] {
   --ink: #ffffff;
   --surface: #ffffff;
@@ -68,15 +67,7 @@
   --overlay-bg: rgba(20, 21, 26, 0.42);
 }
 
-/* ============================================================
-   Tailwind theme bridge — exposes our CSS vars as utilities:
-     bg-ink / bg-surface / bg-surface-2 / bg-surface-3
-     border-line / border-line-2 / border-line-3
-     text-text / text-text-2 / text-text-3
-     text-signal / text-signal-2 / bg-signal-soft
-     text-good / bg-good-soft   text-bad / bg-bad-soft   text-warn / bg-warn-soft
-     rounded-s / rounded-m / rounded-l   font-sans / font-mono
-   ============================================================ */
+/* Tailwind theme bridge — exposes our CSS vars as utility class output. */
 @theme inline {
   --color-ink: var(--ink);
   --color-surface: var(--surface);
@@ -108,18 +99,10 @@
 }
 
 /* ============================================================
-   Base resets + page background (painted on both <html> and <body>).
-   Note: we DON'T write a custom `* { padding:0; margin:0 }` reset here.
-   Tailwind v4's preflight already does this inside `@layer base`. If we
-   wrote it outside any layer, it would beat the `px-*` / `py-*` utilities
-   (which live in `@layer utilities`) and silently zero out padding
-   everywhere — segmented controls and arbitrary-padded elements mash up.
+   Base resets + page background.
+   We rely on Tailwind's preflight for `* { margin:0; padding:0 }` so
+   utilities like `px-*` aren't overridden.
    ============================================================ */
-html,
-body {
-  min-height: 100%;
-}
-
 html {
   -webkit-text-size-adjust: 100%;
   background-color: var(--ink);
@@ -128,6 +111,14 @@ html {
 }
 
 body {
+  /* min-height is applied via the Tailwind utility `min-h-dvh` on <body>
+     in the root layout. Writing `min-height: 100vh; min-height: 100dvh`
+     here triggered a Lightning CSS optimization bug that silently dropped
+     both declarations and rewrote the cascade to `html, body { min-height: 100% }`,
+     which broke the sticky-footer chain. Utilities live in a separate
+     @layer and bypass that pass. */
+  display: flex;
+  flex-direction: column;
   background-color: var(--ink);
   color: var(--text);
   font-family: var(--sans);
@@ -168,6 +159,44 @@ button {
   font-family: var(--mono);
 }
 
+/* Main wrapper takes leftover vertical space so footer pins to bottom. */
+.site-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Content wrap — used by both shell and pages. */
+.wrap {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+/* Standard inner padding for routed pages. */
+.page {
+  padding-top: 42px;
+  padding-bottom: 96px;
+}
+.page-head { margin-bottom: 26px; }
+.pagetitle {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.pagesub {
+  font-size: 14px;
+  color: var(--text-2);
+  margin-top: 6px;
+  max-width: 640px;
+}
+.crumb {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-3);
+  margin-bottom: 14px;
+}
+.crumb a:hover { color: var(--text-2); }
+
 /* ============================================================
    Keyframes used by primitives.
    ============================================================ */
@@ -191,7 +220,7 @@ button {
 }
 
 /* ============================================================
-   Button — prototype `.btn` + variants.
+   Button.
    ============================================================ */
 .btn {
   display: inline-flex;
@@ -239,7 +268,7 @@ button {
 .btn-block { width: 100%; padding: 13px; }
 
 /* ============================================================
-   Badge — prototype `.badge` + `.b-sig` / `.b-good`.
+   Badge.
    ============================================================ */
 .badge {
   display: inline-flex;
@@ -335,7 +364,7 @@ button {
 }
 
 /* ============================================================
-   Modal + overlay + (mobile) bottom sheet.
+   Modal + overlay.
    ============================================================ */
 .overlay {
   position: fixed;
@@ -371,7 +400,7 @@ button {
 }
 .modal-b { padding: 16px 22px 22px; }
 
-/* ── Wallet picker option (used inside .modal-b) ─────────────── */
+/* Wallet picker option (used inside .modal-b). */
 .wallet-opt {
   display: flex;
   align-items: center;
@@ -392,9 +421,7 @@ button {
   border-color: var(--line-3);
   background: var(--surface-2);
 }
-.wallet-opt:active {
-  transform: scale(0.99);
-}
+.wallet-opt:active { transform: scale(0.99); }
 .wallet-opt .ic {
   width: 34px;
   height: 34px;
@@ -407,10 +434,7 @@ button {
   font-size: 15px;
   color: #fff;
 }
-.wallet-opt .wn {
-  font-size: 14px;
-  font-weight: 500;
-}
+.wallet-opt .wn { font-size: 14px; font-weight: 500; }
 .wallet-opt .wd {
   font-size: 11px;
   color: var(--text-3);
@@ -423,34 +447,17 @@ button {
   display: inline-flex;
 }
 
-/* ── Status modal (non-dismissible, used during "connecting…") ── */
+/* Status modal — non-dismissible, used during "connecting…" */
 .modal-status {
   padding: 26px 22px;
   text-align: center;
 }
-.modal-status .spinner {
-  margin: 8px auto 16px;
-}
-.modal-status h3 {
-  font-size: 16px;
-  font-weight: 600;
-}
+.modal-status .spinner { margin: 8px auto 16px; }
+.modal-status h3 { font-size: 16px; font-weight: 600; }
 .modal-status p {
   font-size: 13px;
   color: var(--text-2);
   margin-top: 5px;
-}
-
-/* On mobile the wallet-opt button needs the option's flex children
-   to size correctly inside the bottom sheet. */
-@media (max-width: 680px) {
-  .wallet-opt {
-    padding: 15px;
-  }
-  .wallet-opt .ic {
-    width: 38px;
-    height: 38px;
-  }
 }
 
 /* ============================================================
@@ -542,9 +549,299 @@ button {
 }
 
 /* ============================================================
-   Responsive — modal becomes a bottom sheet, toast pins down.
+   Site header — sticky top bar with backdrop blur.
+   ============================================================ */
+header.site {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: var(--header-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border-bottom: 1px solid var(--line);
+}
+.bar {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  gap: 12px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-size: 17px;
+  flex: none;
+}
+.brand .p { color: var(--text-3); font-weight: 400; }
+.brand svg { width: 25px; height: 25px; color: var(--text); }
+.grow { flex: 1 1 auto; min-width: 0; }
+
+/* Desktop inline nav links. */
+.navlinks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 14px;
+}
+.navlinks a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-2);
+  padding: 8px 13px;
+  border-radius: var(--r-s);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.navlinks a:hover { color: var(--text); }
+.navlinks a.on { color: var(--text); background: var(--surface-2); }
+.navlinks a .lk { display: flex; color: var(--text-3); }
+
+/* Right-side controls group. */
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* Square icon button (38x38). */
+.iconbtn {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-s);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  flex: none;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.iconbtn:hover { border-color: var(--line-3); color: var(--text); }
+.iconbtn:active { transform: scale(0.96); }
+
+/* Segmented control (EN/中, Light/Dark in drawer). */
+.seg {
+  display: flex;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-s);
+  overflow: hidden;
+  flex: none;
+}
+.seg button {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: var(--mono);
+  color: var(--text-3);
+  transition: 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.seg button.on { background: var(--surface-2); color: var(--text); }
+
+/* Burger — desktop hidden, shown by media query below. */
+.burger {
+  display: none;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-s);
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  transition: border-color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.burger:hover { border-color: var(--line-3); background: var(--surface-2); }
+.burger:active { transform: scale(0.96); }
+.burger span {
+  display: block;
+  width: 15px;
+  height: 1.5px;
+  background: var(--text);
+  position: relative;
+}
+.burger span::before,
+.burger span::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 15px;
+  height: 1.5px;
+  background: var(--text);
+}
+.burger span::before { top: -5px; }
+.burger span::after { top: 5px; }
+
+/* ============================================================
+   Mobile drawer — fixed full-viewport scrim with left-side panel.
+   Hidden on desktop via the min-width: 681px media query at bottom.
+   ============================================================ */
+.drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: var(--overlay-bg);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s;
+}
+.drawer.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.drawer-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 86vw;
+  max-width: 340px;
+  background: var(--surface);
+  border-right: 1px solid var(--line-2);
+  padding: 78px 18px calc(20px + env(safe-area-inset-bottom, 0));
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform 0.3s var(--ease);
+  overflow-y: auto;
+}
+.drawer.open .drawer-panel { transform: none; }
+
+.d-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dnav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 12px;
+  border-radius: var(--r-m);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 48px;
+}
+.dnav:active { background: var(--surface-2); }
+.dnav.on { background: var(--surface-2); color: var(--text); }
+.dnav .dn-ic {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  flex: none;
+}
+.dnav.on .dn-ic { color: var(--signal); }
+.dnav .dn-l { font-size: 15px; font-weight: 500; }
+.dnav .dlk { margin-left: 6px; color: var(--text-3); display: flex; }
+.dnav .dn-arr { margin-left: auto; color: var(--text-3); display: flex; }
+
+.d-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 14px 4px;
+}
+.d-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 7px 12px;
+}
+.d-row-l { font-size: 14px; color: var(--text-2); }
+
+.d-foot {
+  margin-top: auto;
+  padding-top: 20px;
+}
+.d-wallet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text-2);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  margin-bottom: 9px;
+}
+.d-wallet .live {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 0 3px var(--good-soft);
+  flex: none;
+}
+.d-wallet .d-bal {
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+/* ============================================================
+   Site footer — slim single-row band.
+   Brand left, "© 2026" right. Stacks centered on narrow viewports.
+   Background follows page (--ink); only the top border separates it.
+   ============================================================ */
+footer.site {
+  border-top: 1px solid var(--line);
+  background: var(--ink);
+}
+.foot-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 0;
+}
+.foot-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-size: 15px;
+  color: var(--text);
+}
+.foot-brand svg {
+  width: 20px;
+  height: 20px;
+  color: var(--text);
+}
+.foot-brand .fb-p {
+  color: var(--text-2);
+  font-weight: 400;
+}
+.foot-copy {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-3);
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================
+   Responsive — ONE @media block per breakpoint, all rules consolidated.
+   Previously this file had two `@media (max-width: 680px)` blocks which
+   tripped Lightning CSS dedup and silently dropped rules — keeping a
+   single block per breakpoint avoids that pathology.
    ============================================================ */
 @media (max-width: 680px) {
+  .wrap { padding: 0 18px; }
+
+  /* Modal becomes a bottom sheet. */
   .overlay {
     align-items: flex-end;
     padding: 0;
@@ -567,15 +864,51 @@ button {
     background: var(--line-3);
     margin: 10px auto 2px;
   }
+  .wallet-opt { padding: 15px; }
+  .wallet-opt .ic { width: 38px; height: 38px; }
 
+  /* Toast pins to the bottom edge. */
   .toast {
     bottom: calc(env(safe-area-inset-bottom, 0) + 18px);
     width: calc(100% - 40px);
     max-width: none;
     justify-content: flex-start;
   }
+
+  /* Header swap: burger shows, inline nav + desktop-only controls hide. */
+  .burger { display: flex; }
+  .navlinks { display: none; }
+  .seg-desktop,
+  .iconbtn-desktop { display: none; }
+  .bar { height: 58px; gap: 10px; }
+
+  /* Pages tighten. */
+  .page {
+    padding-top: 28px;
+    padding-bottom: 72px;
+  }
+  .pagetitle { font-size: 22px; }
+  .pagesub { font-size: 13.5px; }
+
+  /* Footer stacks vertically + centered on narrow viewports. */
+  .foot-in {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 0;
+  }
+}
+
+@media (max-width: 430px) {
+  .brand .p { display: none; }
+}
+
+@media (min-width: 681px) {
+  .drawer { display: none !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .skel::after { animation: none; }
+  .drawer,
+  .drawer-panel { transition: none; }
 }

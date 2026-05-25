@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { BrandSvgDefs } from "@/components/brand-svg-defs";
 import { AppProviders } from "@/components/providers/AppProviders";
+import { SiteHeader } from "@/components/shell/SiteHeader";
+import { SiteFooter } from "@/components/shell/SiteFooter";
 import "./globals.css";
 
 const plexSans = IBM_Plex_Sans({
@@ -49,9 +51,16 @@ export default function RootLayout({
         />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
-      <body>
+      {/* min-h-dvh is what anchors the sticky-footer chain to the viewport.
+          (See globals.css body rule for why this lives here as a utility
+          instead of in the body block.) */}
+      <body className="min-h-dvh">
         <BrandSvgDefs />
-        <AppProviders>{children}</AppProviders>
+        <AppProviders>
+          <SiteHeader />
+          <main className="site-main">{children}</main>
+          <SiteFooter />
+        </AppProviders>
       </body>
     </html>
   );
