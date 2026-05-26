@@ -118,12 +118,12 @@ export function PolicyRow({ policy, bucket }: Props) {
     bar = (
       <div className="prow-bar">
         <div className="pbar">
-          <i style={{ width: released === null ? "0%" : `${pc.toFixed(0)}%` }} />
+          <i style={{ width: released === null ? "0%" : `${pc.toFixed(1)}%` }} />
         </div>
         <span className="pbt">
           {released === null
             ? "—"
-            : `${money(released)} / ${money(policy.a)} · ${pc.toFixed(0)}%`}
+            : `${money(released)} / ${money(policy.a)} · ${pc.toFixed(1)}%`}
         </span>
       </div>
     );

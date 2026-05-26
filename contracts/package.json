@@ -9,6 +9,7 @@
     "test": "hardhat test",
     "test:gas": "hardhat test --gas-stats",
     "test:coverage": "hardhat test --coverage",
+    "snapshot": "node scripts/snapshot.ts",
     "deploy:testnet": "hardhat ignition deploy ignition/modules/Deploy.ts --network bscTestnet",
     "verify:testnet": "hardhat verify etherscan --build-profile production --network bscTestnet"
   },
