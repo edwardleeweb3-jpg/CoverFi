@@ -102,10 +102,42 @@ starts.
 
 ## 5. Current status
 
-**Segment 3 (database / Supabase) is complete.** Combined with Segment 2,
-that's frontend + persistent storage shipped and on `main`.
+**Segment 4 (smart contracts) is on BSC Testnet** — both contracts
+deployed, BscScan-verified, payout pool seeded. Frontend wire-up
+(Phase E of the Segment 4 plan) is still ahead.
 
-**Segment 3 commits (5 steps):**
+### Segment 4 — deployed contracts (BSC Testnet, chainId 97)
+
+| Contract       | Address                                                                                                                  | Source |
+|----------------|--------------------------------------------------------------------------------------------------------------------------|--------|
+| MockUSDC       | [`0xb1DC4F171091D2b3d94a8B14be8cc663fD994e73`](https://testnet.bscscan.com/address/0xb1DC4F171091D2b3d94a8B14be8cc663fD994e73#code) | verified |
+| CoverFiPolicy  | [`0xEbdd8f124EaD6DABd7C5F3893E2A244280fE5b19`](https://testnet.bscscan.com/address/0xEbdd8f124EaD6DABd7C5F3893E2A244280fE5b19#code) | verified |
+
+Deployer / `DEFAULT_ADMIN_ROLE` / `SETTLER_ROLE`:
+`0x06AdF68BDFAE3BEF1a2C065594C563B7066e3827` (project EOA, v1 testnet
+only — mainnet must be a multisig per `contracts/AUDIT.md`).
+
+Initial state at handoff: project wallet holds 900,000 mUSDC,
+CoverFiPolicy holds 100,000 mUSDC as payout-pool seed (PRD §8.2),
+`qBps = 5000`. The frontend reads the addresses above from
+`src/lib/contracts/addresses.ts`.
+
+**Segment 4 commits (B1–B6 contracts + C audit + D1–D4 deploy):**
+
+```
+983765a feat: contracts — BscScan verification config
+03624c7 feat: contracts — BSC Testnet deployment modules and scripts
+87d1a9b feat: contracts — security audit fixes and rescueToken
+6c4bc91 feat: contracts — NatSpec, README and gas/coverage polish
+bf14829 feat: contracts — claim and linear release math
+2ecadda feat: contracts — triggerSettlement (three-outcome settlement)
+7cdccd4 feat: contracts — buyPolicy and premium quoting
+460e6ab feat: contracts — CoverFiPolicy skeleton
+2dd125d feat: contracts — MockUSDC faucet token
+9f10a23 feat: contracts — Hardhat 3 project scaffold
+```
+
+**Segment 3 commits (5 steps — database):**
 
 ```
 4ee795a feat: db step 5 — persist claims to Supabase
@@ -131,8 +163,11 @@ f8cf7f4 feat: step 2 — providers and UI primitives
 076adf9 feat: step 1 — design tokens, fonts, theme system
 ```
 
-**Next: Segment 4 — Smart contracts.** See §8 for scope. Segments 2 + 3
-are closed unless a specific issue surfaces.
+**Next: Segment 4 / Phase E — frontend contract wire-up.** Replace
+the simulated `mintPolicy` / `claimPolicy` / `claimAll` flows with
+real `useWriteContract` calls against the addresses above. Phases B
+(contracts), C (audit), D (deploy) are done; Phase E is the only
+remaining piece before Segment 4 closes.
 
 ### Deployment
 
