@@ -21,7 +21,22 @@ import { defineConfig } from "hardhat/config";
 const RPC_URL =
   process.env.BSC_TESTNET_RPC_URL ||
   "https://data-seed-prebsc-1-s1.binance.org:8545";
-const PRIVATE_KEY = process.env.PRIVATE_KEY ?? "";
+
+/**
+ * Normalise the deployer key so a raw MetaMask export (64 hex chars,
+ * no 0x prefix — that's exactly what Account Details → Show Private
+ * Key gives you) works without manual prefix-fiddling. Returns
+ * `undefined` when no key is set so the bscTestnet network just has
+ * an empty `accounts` array (local hardhat work still runs).
+ */
+function normalizePrivateKey(raw: string): `0x${string}` | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  const withPrefix = trimmed.startsWith("0x") ? trimmed : `0x${trimmed}`;
+  return withPrefix as `0x${string}`;
+}
+
+const PRIVATE_KEY = normalizePrivateKey(process.env.PRIVATE_KEY ?? "");
 
 export default defineConfig({
   plugins: [hardhatToolboxViemPlugin],
@@ -61,7 +76,7 @@ export default defineConfig({
       chainType: "l1",
       url: RPC_URL,
       chainId: 97,
-      accounts: PRIVATE_KEY ? [PRIVATE_KEY as `0x${string}`] : [],
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
   },
 });
