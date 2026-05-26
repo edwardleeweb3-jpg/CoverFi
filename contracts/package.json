@@ -10,7 +10,7 @@
     "test:gas": "hardhat test --gas-stats",
     "test:coverage": "hardhat test --coverage",
     "deploy:testnet": "hardhat ignition deploy ignition/modules/Deploy.ts --network bscTestnet",
-    "verify:testnet": "hardhat verify etherscan --network bscTestnet"
+    "verify:testnet": "hardhat verify etherscan --build-profile production --network bscTestnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.6",

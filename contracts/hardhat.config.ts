@@ -79,4 +79,12 @@ export default defineConfig({
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
   },
+  verify: {
+    etherscan: {
+      // Etherscan v2 API uses a single key across all supported
+      // chains (including BSC) — same key, different chainId in the
+      // request. `npm run verify:testnet` reads this.
+      apiKey: process.env.BSCSCAN_API_KEY ?? "",
+    },
+  },
 });
