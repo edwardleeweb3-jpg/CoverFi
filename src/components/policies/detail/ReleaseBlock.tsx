@@ -106,15 +106,25 @@ export function ReleaseBlock({
       {good ? (
         <div className="notebox release-done">{t.fullReimbursed}</div>
       ) : (
-        <Button
-          variant="primary"
-          block
-          className="release-claim-btn"
-          onClick={onClaim}
-          disabled={claimable <= 0 || busy}
-        >
-          {claimable > 0 ? t.claimBtn(money(claimable)) : t.nothingClaim}
-        </Button>
+        // 0.01 USDC threshold = the display resolution (`money()`
+        // uses 2 decimal places). Below this the button would read
+        // "Claim 0.00 USDC" while still being clickable, which is
+        // both misleading and wastes the user's gas. Above the
+        // threshold the button enables with the real amount.
+        (() => {
+          const canClaim = claimable >= 0.01;
+          return (
+            <Button
+              variant="primary"
+              block
+              className="release-claim-btn"
+              onClick={onClaim}
+              disabled={!canClaim || busy}
+            >
+              {canClaim ? t.claimBtn(money(claimable)) : t.nothingClaim}
+            </Button>
+          );
+        })()
       )}
     </Panel>
   );

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { ACTIVITY, POLICIES } from "@/lib/mock";
+import { POLICIES } from "@/lib/mock";
 import type { Activity, Order, Policy, PolicyStatus } from "@/lib/mock";
 import { claimableOf, releasedOf } from "@/lib/pricing";
 
@@ -97,7 +97,13 @@ function parsePolicyCounter(id: string): number | null {
 export const useSimulationStore = create<SimulationStore>((set, get) => ({
   balance: INITIAL_BALANCE,
   policies: [...POLICIES],
-  activities: [...ACTIVITY],
+  // Empty — see PoliciesPage comment header. Phase F: the legacy
+  // ACTIVITY seed was a foreign user's fake events and the post-E3/E4
+  // mutation paths into this slice are dead. Real activity feed
+  // arrives with the event-indexer step (deferred). Until then the
+  // /policies feed stays hidden via the `activities.length > 0`
+  // guard in PoliciesPage + ActivityFeed's own empty-state return.
+  activities: [],
   insuredOrderIds: new Set<string>(),
   nextPolicyCounter: INITIAL_POLICY_COUNTER,
 
