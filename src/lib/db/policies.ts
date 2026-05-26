@@ -1,49 +1,58 @@
 import type { PostgrestError } from "@supabase/supabase-js";
+import { formatUnits, type Hex } from "viem";
 import { supabase } from "@/lib/supabase";
 import type { Order, OptionEn, OptionZh, Policy, PolicyStatus } from "@/lib/mock";
 
 /**
  * Data-access layer for the `policies` table.
  *
- * This step (segment 3 / step 3) covers WRITES only: when the
- * review-and-pay flow completes, the new policy is recorded here.
- * Reads (the /policies overview, the policy detail page) still go
- * through `useSimulationStore` — switching them to Supabase is the
- * next step.
+ * Writes: the review-and-pay flow inserts a new row after a successful
+ * on-chain `buyPolicy` (Phase E3). The row carries both the human-
+ * readable `id` and the on-chain `chain_policy_id` (uint256 → numeric
+ * string), plus the tx hash so we can deep-link to BscScan and let a
+ * future event indexer reconcile.
+ *
+ * Reads: `listPoliciesByOwner` + `getPolicyById` already in place for
+ * the /policies + detail pages.
  *
  * Field mapping (frontend `Policy` ↔ DB column) lives in
- * `insertPolicy()` below. Numeric columns are written as plain JS
- * numbers (supabase-js serialises losslessly on the way in); the
- * read-side `numeric`-as-string gotcha noted in `supabase/schema.sql`
- * only matters once we start reading, so the mapper for that lands
- * in the next step.
+ * `insertPolicy()` + `rowToPolicy()` below. USDC amounts cross the
+ * boundary as bigint wei on the contract side and decimal USDC strings
+ * on the DB side — we use `formatUnits(wei, 6)` at the boundary so
+ * the existing `numeric(20, 6)` columns store exact decimal USDC
+ * (round-tripped via `Number(row.principal)` on read).
  */
 
+/** USDC has 6 decimals across every chain it lives on. */
+const USDC_DECIMALS = 6;
+
 export interface InsertPolicyInput {
-  /** Candidate policy ID, e.g. "CF-00232". Must be unique in the table. */
+  /** Human-readable policy id, e.g. "CF-0000232". Derived via
+   *  `formatPolicyId(chainPolicyId)` — caller is responsible for the
+   *  derivation so both fields are consistently 1:1. */
   id: string;
-  /** Investor's wallet address (any case — normalized to lowercase here). */
+  /** uint256 policy id from `PolicyMinted.policyId`. Stored as numeric. */
+  chainPolicyId: bigint;
+  /** `buyPolicy()` tx hash. Stored as text for BscScan deep-links. */
+  txHash: Hex;
+  /** Investor's wallet address (any case — normalised to lowercase here). */
   ownerAddress: string;
   /** Source Signa order — provides market/option text + signa_order_id + a. */
   order: Order;
-  /** Premium paid (USDC), captured at mint. */
-  premium: number;
-  /** Implied probability snapshot k = optTVL/mktTVL at mint (PRD §3.2). */
-  k: number;
+  /** Premium paid in token base units (wei). Converted to a decimal-USDC
+   *  string for the `numeric(20, 6)` column. */
+  premium: bigint;
+  /** Implied probability snapshot at mint, in bps (0..10_000). Stored
+   *  as a 0..1 decimal in `k_snapshot` so existing read paths keep
+   *  working unchanged. */
+  kBps: number;
 }
 
 /**
- * Tagged result so the caller can distinguish the three meaningful
- * outcomes:
- *   - `id-taken`              → the candidate `id` collided on the PK;
- *                               retry with the next CF-XXXXX.
- *   - `order-already-insured` → another session has already minted on
- *                               this Signa order (PRD §3.1 "one order
- *                               → at most one policy", enforced by
- *                               the `signa_order_id` unique
- *                               constraint). TERMINAL — do not retry.
- *   - `other`                 → network / unexpected failure; surface
- *                               the message to the user.
+ * Tagged result. `id-taken` survives from B3's retry strategy even
+ * though it can't happen now (chain-derived id collides only if the
+ * contract's `nextPolicyId` rewinds, which it can't) — keeping it
+ * lets callers stay defensive at a near-zero cost.
  */
 export type InsertPolicyResult =
   | { ok: true }
@@ -52,19 +61,35 @@ export type InsertPolicyResult =
   | { ok: false; reason: "other"; message: string };
 
 /**
- * Insert a freshly-minted policy. `claimed` falls back to its column
- * default (0); `created_at` to `now()`; `settled_at` / `voided_at`
- * stay NULL until the lifecycle advances.
+ * Insert a freshly-minted policy. `claimed` defaults to 0; `created_at`
+ * to `now()`; `settled_at` / `voided_at` stay NULL until the lifecycle
+ * advances.
  *
  * The owner_address is lowercased before insert — the DB has a
  * `check (owner_address = lower(...))` constraint and will reject
  * mixed-case strings outright.
+ *
+ * bigint → DB conversion notes:
+ *   - `premium`  : `formatUnits(wei, 6)` → "295.000000" string, exact
+ *                  decimal for the `numeric(20, 6)` column.
+ *   - `principal`: same treatment from `order.a` (still a number from
+ *                  the seed; converted via `parseUnits` round-trip
+ *                  through `formatUnits` for consistency).
+ *   - `chain_policy_id`: `bigint.toString()` (numeric column).
  */
 export async function insertPolicy(
   input: InsertPolicyInput,
 ): Promise<InsertPolicyResult> {
+  const principalUsdc = input.order.a.toFixed(USDC_DECIMALS);
+  const premiumUsdc = formatUnits(input.premium, USDC_DECIMALS);
+  // bps → 0..1 decimal preserves existing read-side semantics
+  // (Number(row.k_snapshot) returns the 0..1 probability as before).
+  const kDecimal = (input.kBps / 10_000).toFixed(6);
+
   const { error } = await supabase.from("policies").insert({
     id: input.id,
+    chain_policy_id: input.chainPolicyId.toString(),
+    tx_hash: input.txHash,
     owner_address: input.ownerAddress.toLowerCase(),
     signa_order_id: input.order.id,
     category_en: input.order.catEn,
@@ -73,9 +98,9 @@ export async function insertPolicy(
     market_zh: input.order.mZh,
     option_en: input.order.optEn,
     option_zh: input.order.optZh,
-    principal: input.order.a,
-    k_snapshot: input.k,
-    premium: input.premium,
+    principal: principalUsdc,
+    k_snapshot: kDecimal,
+    premium: premiumUsdc,
     status: "active",
   });
 
@@ -86,19 +111,24 @@ export async function insertPolicy(
 /**
  * Map a PostgrestError to our tagged result.
  *
- * `23505` is PostgreSQL `unique_violation`. We disambiguate the two
- * unique constraints on this table by the constraint name carried in
- * the error message:
- *   - "policies_pkey"               → PK clash on `id` (retry-able)
- *   - "policies_signa_order_id_key" → unique clash on `signa_order_id`
- *                                     (terminal — already insured)
+ * `23505` is PostgreSQL `unique_violation`. Three unique constraints
+ * live on this table now:
+ *   - "policies_pkey"                     → PK clash on `id`.
+ *   - "policies_chain_policy_id_key"      → clash on `chain_policy_id`.
+ *   - "policies_signa_order_id_key"       → clash on `signa_order_id`.
  *
- * Everything else collapses to `other` so the UI can surface a
- * generic "try again" prompt.
+ * `id` and `chain_policy_id` are derived from the same chain value,
+ * so a clash on either means "this exact policy already has a row" —
+ * an idempotency-style replay of the post-mint save. Both collapse
+ * to `id-taken`. A `signa_order_id` clash means a *different* mint
+ * already used the same Signa order, which is terminal.
  */
 function classifyError(error: PostgrestError): InsertPolicyResult {
   if (error.code === "23505") {
-    if (error.message.includes("policies_pkey")) {
+    if (
+      error.message.includes("policies_pkey") ||
+      error.message.includes("chain_policy_id")
+    ) {
       return { ok: false, reason: "id-taken" };
     }
     return { ok: false, reason: "order-already-insured" };

@@ -104,7 +104,20 @@ create table if not exists policies (
   -- so timezones don't bite us.
   created_at      timestamptz not null default now(),
   settled_at      timestamptz,   -- set when status moves to releasing/completed/hit
-  voided_at       timestamptz    -- set when status moves to void
+  voided_at       timestamptz,   -- set when status moves to void
+
+  -- On-chain backing — added in migration 0001_chain_link.sql once
+  -- contracts landed on BSC Testnet. `chain_policy_id` is the
+  -- uint256 emitted by `CoverFiPolicy.PolicyMinted.policyId` (numeric
+  -- because PG bigint is signed 64-bit and uint256 doesn't fit);
+  -- `tx_hash` is the buyPolicy() tx hash, useful for BscScan links
+  -- and future event-indexer reconciliation. The human-readable
+  -- `id` column above is derived from `chain_policy_id` by the
+  -- frontend's `formatPolicyId()` ("CF-" + 7-digit zero-pad).
+  -- Both NOT NULL — every policy from E3 onward is backed by an
+  -- on-chain mint and `insertPolicy()` always populates them.
+  tx_hash         text not null,
+  chain_policy_id numeric not null unique
 );
 
 -- Primary query path: "give me wallet X's policies".

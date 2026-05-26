@@ -1,4 +1,11 @@
-import { getContract, type Address, type Client } from "viem";
+import {
+  getContract,
+  keccak256,
+  toHex,
+  type Address,
+  type Client,
+  type Hex,
+} from "viem";
 
 import { coverFiPolicyAbi } from "./abi/CoverFiPolicy";
 import { mockUsdcAbi } from "./abi/MockUSDC";
@@ -66,4 +73,49 @@ export function getMockUsdcContract(
 ) {
   const address: Address = getContractAddresses(chainId).mockUSDC;
   return getContract({ address, abi: mockUsdcAbi, client });
+}
+
+// ─── Hashing helpers ─────────────────────────────────────────────
+
+/**
+ * Canonical mapping `signa_order_id` → `bytes32 orderHash` used by
+ * `CoverFiPolicy.buyPolicy`. Lives here (not in a util file) so the
+ * single source-of-truth is co-located with the contract abi: any
+ * future tweak to the hashing scheme can only happen alongside an
+ * ABI change.
+ *
+ * Scheme: `keccak256(utf8Bytes(orderId))`. Picked in plan answer (a)
+ * — opaque, format-agnostic, forward-compatible with whatever Signa
+ * eventually uses as their id format.
+ */
+export function orderHashOf(signaOrderId: string): Hex {
+  return keccak256(toHex(signaOrderId));
+}
+
+/**
+ * `option` label → `bytes32` for the `PolicyMinted` event. The
+ * contract never reads option (it's event-only), so the hashing
+ * scheme is purely a convention between frontend and indexer.
+ *
+ * We hash the English label (e.g. "Yes" / "No") for cross-locale
+ * consistency — "是" and "Yes" represent the same option but only
+ * one of them can be the canonical on-chain identifier.
+ */
+export function optionHashOf(englishLabel: string): Hex {
+  return keccak256(toHex(englishLabel));
+}
+
+// ─── ID format ───────────────────────────────────────────────────
+
+/**
+ * On-chain `policyId` (uint256) → human-readable `id` ("CF-0000232").
+ * Used for the DB `id` column and the `/policies/[id]` route.
+ *
+ * Seven-digit zero-padding preserves the visual style established
+ * by the prototype's pre-contract demo (CF-00xxx with five digits)
+ * while extending capacity headroom — by the time we exceed 9.99M
+ * policies the format is the least of our concerns.
+ */
+export function formatPolicyId(chainPolicyId: bigint): string {
+  return `CF-${chainPolicyId.toString().padStart(7, "0")}`;
 }

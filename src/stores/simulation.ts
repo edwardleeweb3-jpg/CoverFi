@@ -50,6 +50,17 @@ interface SimulationStore {
   mintPolicy: (id: string, order: Order, premium: number, k: number) => void;
 
   /**
+   * Mark a Signa order as insured by the current session. Lightweight
+   * counterpart to `mintPolicy` for the Phase E flow where the source
+   * of truth lives on-chain + in Supabase — the only piece the store
+   * still owns is the per-session `insuredOrderIds` set that the
+   * `/insurance` list filters by. Balance + activity feed don't need
+   * the imaginary debit anymore because balance is read from the
+   * chain via wagmi `useBalance`.
+   */
+  markInsured: (signaOrderId: string) => void;
+
+  /**
    * Claim everything released-so-far on a single policy. Updates that
    * policy's `claimed` to its current `releasedOf()`, flips status to
    * `completed` if fully released (within a 0.01 epsilon to match the
@@ -89,6 +100,15 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   activities: [...ACTIVITY],
   insuredOrderIds: new Set<string>(),
   nextPolicyCounter: INITIAL_POLICY_COUNTER,
+
+  markInsured: (signaOrderId) => {
+    set((s) => {
+      if (s.insuredOrderIds.has(signaOrderId)) return {};
+      const next = new Set(s.insuredOrderIds);
+      next.add(signaOrderId);
+      return { insuredOrderIds: next };
+    });
+  },
 
   mintPolicy: (id, order, premium, k) => {
     const newPolicy: Policy = {

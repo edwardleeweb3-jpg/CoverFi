@@ -216,8 +216,12 @@ export const en = {
     "Use the same wallet you trade with on Signa. Simulated — no real connection is made.",
   extension: "Browser extension",
   scanMobile: "Scan with mobile",
+  approving: "Approving USDC",
+  approvingSub: "Confirm the approval in your wallet so the contract can pull your premium.",
   minting: "Minting policy",
   mintingSub: "Paying premium and minting your insurance contract.",
+  savingPolicy: "Recording policy",
+  savingPolicySub: "Saving the policy record to our index. The on-chain mint is already complete.",
   claimingT: "Processing claim",
   claimingSub: "Transferring released principal to your wallet.",
   batchT: "Processing batch claim",
@@ -239,6 +243,19 @@ export const en = {
   errOrderTakenTitle: "Order already insured",
   errOrderTakenMsg:
     "This Signa order has already been insured. Refresh the insurance list to see what's still available.",
+  errApproveTitle: "USDC approval failed",
+  errApproveMsg:
+    "Couldn't approve USDC for the insurance contract. Check your wallet and try again.",
+  errMintTitle: "Mint failed",
+  errMintMsg:
+    "The on-chain mint didn't go through. No USDC was spent on the policy. Try again.",
+  errWrongChainTitle: "Wrong network",
+  errWrongChainMsg: (name: string) =>
+    `Connected to the wrong network. Switch to ${name} from the wallet button in the header, then try again.`,
+  errPostMintTitle: "Policy minted — record save failed",
+  errPostMintMsg: (txHash: string) =>
+    `Your policy was minted on-chain successfully — your USDC reached the contract and the policy is real and valid (tx ${txHash}). NO FUNDS WERE LOST. Only the off-chain record save failed. Click retry to save the record, or view the tx on BscScan and contact support if it keeps failing.`,
+  retryRecord: "Retry save",
   errLoadTitle: "Couldn't load",
   errLoadMsg:
     "There was a problem loading this from the database. Check your connection and try again.",
