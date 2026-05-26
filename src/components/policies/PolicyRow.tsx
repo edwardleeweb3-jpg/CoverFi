@@ -108,9 +108,14 @@ export function PolicyRow({ policy, bucket }: Props) {
       </>
     );
   } else {
+    // nopay = Hit OR Void. Both have no claim payout, but Void
+    // refunded the premium back to the wallet while Hit kept it.
+    // Single bucket, two labels.
     fig = (
       <>
-        <div className="fk">{t.premiumKept}</div>
+        <div className="fk">
+          {policy.status === "void" ? t.premiumRefunded : t.premiumKept}
+        </div>
         <div className="fv">
           {money(policy.premium)}
           <span className="fu">USDC</span>

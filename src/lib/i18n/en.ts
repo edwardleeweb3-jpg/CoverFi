@@ -162,6 +162,7 @@ export const en = {
   recovered: "recovered",
   coverageCol: "coverage",
   premiumKept: "premium kept",
+  premiumRefunded: "premium refunded",
   released: "released",
   open: "Open",
   contractTitle: "Insurance contract",
@@ -185,7 +186,7 @@ export const en = {
   stHit: (p: string) =>
     `The insured option won, so coverage did not trigger. The policy is closed and the premium of ${p} USDC was kept — the cost of the hedge.`,
   stVoid: (p: string) =>
-    `The market was voided with no definitive result. Coverage did not trigger. The policy is closed and the premium of ${p} USDC was kept.`,
+    `The Signa market was voided with no definitive result. Coverage did not trigger, the policy is closed, and the premium of ${p} USDC has been refunded in full to your wallet.`,
   timeline: "status timeline",
   tlMinted: "Policy minted",
   tlInsured: (v: string) => `premium ${v} USDC`,
@@ -198,8 +199,8 @@ export const en = {
   tlClosed: "Policy closed",
   tlPremKept: "premium kept · no payout",
   tlVoided: "Market voided",
-  tlRefunded: "Policy closed",
-  tlReturned: (_p: string) => `premium kept · no payout`,
+  tlRefunded: "Premium refunded",
+  tlReturned: (p: string) => `${p} USDC returned to wallet`,
   tlMissed: "Settled · option missed",
   tlReimbursed: "Reimbursed in full",
   tlReleasing: "Releasing principal",
