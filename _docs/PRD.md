@@ -331,27 +331,39 @@ Order {
 
 ## 10. 验收标准（本次阶段「完成」的定义）
 
+> **进度状态（截至 Segment 4 完成）**：P0 五项 + P1 四项已完成；
+> 仅「Signa 适配器接口」和「运营后台 / Q from config」未做——这两项
+> 分别属于 **Segment 5（Signa 适配器，next）** 和 **Segment 6（运营
+> 后台）**。具体进度见 `CLAUDE.md` §5 / §8。
+
 P0/P1 全部满足即视为本阶段完成：
 
 **P0（必须）**
-- [ ] 前端 1:1 还原原型（页面、组件、文案、双语、主题、移动端）
-- [ ] 真实路由可用（刷新/前进后退/分享）
-- [ ] 真实连接 BSC Testnet 钱包
-- [ ] 后端 API + 数据库 跑通全部端点
-- [ ] Signa 适配器接口就位（Signa 未就绪时用占位实现）
-- [ ] 部署上线，公网可访问，手机正常
+- [x] 前端 1:1 还原原型（页面、组件、文案、双语、主题、移动端）
+- [x] 真实路由可用（刷新/前进后退/分享）
+- [x] 真实连接 BSC Testnet 钱包
+- [x] 后端 API + 数据库 跑通全部端点（Supabase `policies` 表 + 前端
+      DAO 直连，无独立 API server——同时满足 PRD 意图）
+- [ ] Signa 适配器接口就位（Signa 未就绪时用占位实现）—— **Segment 5**
+- [x] 部署上线，公网可访问，手机正常（[cover-fi.vercel.app](https://cover-fi.vercel.app)）
 
 **P1（必须，含合约 + 运营后台）**
-- [ ] `CoverFiPolicy` 合约部署到 BSC Testnet
-- [ ] 前端真实调用合约完成「投保」与「领取」
-- [ ] 完整走通：连钱包 → 投保 → 铸保单 → （模拟结算）→ 赔付中 → 领取
-- [ ] 合约通过 AI 审计，明显问题已修复
-- [ ] 运营后台：可登录、可修改定价阀门 `Q`、可管理白名单（§4A，必要时用最小版）
-- [ ] 保费公式中的 `Q` 从 `config` 表读取，未写死
+- [x] `CoverFiPolicy` 合约部署到 BSC Testnet
+      （`0xEbdd8f124EaD6DABd7C5F3893E2A244280fE5b19`，BscScan verified）
+- [x] 前端真实调用合约完成「投保」与「领取」
+- [x] 完整走通：连钱包 → 投保 → 铸保单 → 结算（settle.ts 临时脚本，
+      Segment 5 由 Signa 适配器接管）→ 赔付中 → 领取
+      （三笔真实保单：CF-0000001 Releasing / CF-0000002 Hit / CF-0000003 Void）
+- [x] 合约通过 AI 审计（`contracts/AUDIT.md`），明显问题已修复
+- [ ] 运营后台：可登录、可修改定价阀门 `Q`、可管理白名单 —— **Segment 6**
+- [ ] 保费公式中的 `Q` 从 `config` 表读取，未写死 —— 当前 `qBps` 直接
+      读链上 `CoverFiPolicy.qBps()`，可由 admin 调 `setQ()` 修改；
+      Segment 6 加 `config` 表后切到 admin-driven 路径
 
 **P2（有余力）**
-- [ ] Signa 测试网真实对接（依赖 §7 文档到位）
-- [ ] 细节打磨、错误处理完善
+- [ ] Signa 测试网真实对接（依赖 §7 文档到位）—— Segment 5
+- [x] 细节打磨、错误处理完善（Void 文案修复、F3 三连修复、按钮门限、
+      chain ↔ DB 镜像一致性等）
 
 ---
 

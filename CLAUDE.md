@@ -102,9 +102,11 @@ starts.
 
 ## 5. Current status
 
-**Segment 4 (smart contracts) is on BSC Testnet** — both contracts
-deployed, BscScan-verified, payout pool seeded. Frontend wire-up
-(Phase E of the Segment 4 plan) is still ahead.
+**Segments 2 + 3 + 4 are complete.** Production app at
+[cover-fi.vercel.app](https://cover-fi.vercel.app) runs against real
+BSC Testnet contracts and the Supabase mirror. Three real policies
+exist on-chain (one Releasing, one Hit, one Void). Segment 5 (Signa
+adapter) is the next major segment — see §8.
 
 ### Segment 4 — deployed contracts (BSC Testnet, chainId 97)
 
@@ -117,24 +119,48 @@ Deployer / `DEFAULT_ADMIN_ROLE` / `SETTLER_ROLE`:
 `0x06AdF68BDFAE3BEF1a2C065594C563B7066e3827` (project EOA, v1 testnet
 only — mainnet must be a multisig per `contracts/AUDIT.md`).
 
-Initial state at handoff: project wallet holds 900,000 mUSDC,
-CoverFiPolicy holds 100,000 mUSDC as payout-pool seed (PRD §8.2),
-`qBps = 5000`. The frontend reads the addresses above from
-`src/lib/contracts/addresses.ts`.
+Initial deploy state: project wallet held 900,000 mUSDC after
+seeding 100,000 mUSDC into CoverFiPolicy as the payout pool
+(PRD §8.2); `qBps = 5000`. The frontend reads the addresses
+from `src/lib/contracts/addresses.ts`; `qBps` is read live
+from chain per render (admin-tunable via `setQ`).
 
-**Segment 4 commits (B1–B6 contracts + C audit + D1–D4 deploy):**
+Run `cd contracts && npm run snapshot` for a read-only chain ↔ DB
+diagnostic any time.
+
+**Segment 4 commits:**
 
 ```
-983765a feat: contracts — BscScan verification config
-03624c7 feat: contracts — BSC Testnet deployment modules and scripts
-87d1a9b feat: contracts — security audit fixes and rescueToken
-6c4bc91 feat: contracts — NatSpec, README and gas/coverage polish
-bf14829 feat: contracts — claim and linear release math
-2ecadda feat: contracts — triggerSettlement (three-outcome settlement)
-7cdccd4 feat: contracts — buyPolicy and premium quoting
-460e6ab feat: contracts — CoverFiPolicy skeleton
-2dd125d feat: contracts — MockUSDC faucet token
+# Phase B — contracts
 9f10a23 feat: contracts — Hardhat 3 project scaffold
+2dd125d feat: contracts — MockUSDC faucet token
+460e6ab feat: contracts — CoverFiPolicy skeleton
+7cdccd4 feat: contracts — buyPolicy and premium quoting
+2ecadda feat: contracts — triggerSettlement (three-outcome settlement)
+bf14829 feat: contracts — claim and linear release math
+6c4bc91 feat: contracts — NatSpec, README and gas/coverage polish
+
+# Phase C — AI security audit
+87d1a9b feat: contracts — security audit fixes and rescueToken
+
+# Phase D — BSC Testnet deploy + verification
+03624c7 feat: contracts — BSC Testnet deployment modules and scripts
+983765a feat: contracts — BscScan verification config
+46761c6 fix: exclude contracts/ from root tsconfig
+9a8f337 feat: record BSC Testnet contract addresses
+
+# Phase E — frontend wires to chain
+8547fb0 feat: frontend — contract ABIs, typed viem access, ABI sync
+83d7e89 feat: frontend — bigint pricing helpers mirroring the contract
+86a74e6 feat: frontend — real on-chain buyPolicy wiring + migration
+41cc6f0 feat: contracts — temporary settlement script
+ff64f4c feat: frontend — on-chain claim wiring
+
+# Phase F — Void copy + chain-read consistency + polish
+8740cb0 fix: frontend — Void policies were displayed as if premium was kept
+dd4f285 fix: /policies — three Phase F-3 follow-ups
+cb70df5 fix: /policies — PolicyRow + ReleaseBlock chain reads (F3 cleanup)
+f6b83e4 chore: polish — list-row decimal alignment + snapshot script + root readme
 ```
 
 **Segment 3 commits (5 steps — database):**
@@ -163,11 +189,12 @@ f8cf7f4 feat: step 2 — providers and UI primitives
 076adf9 feat: step 1 — design tokens, fonts, theme system
 ```
 
-**Next: Segment 4 / Phase E — frontend contract wire-up.** Replace
-the simulated `mintPolicy` / `claimPolicy` / `claimAll` flows with
-real `useWriteContract` calls against the addresses above. Phases B
-(contracts), C (audit), D (deploy) are done; Phase E is the only
-remaining piece before Segment 4 closes.
+**Next: Segment 5 — Signa adapter.** Replace `lib/mock/orders.ts`
+with real Signa-sourced orders behind the adapter interface stubbed
+in PRD §7.1, then migrate `SETTLER_ROLE` from the project EOA to a
+Signa-aware adapter contract (no code change on CoverFiPolicy —
+just `grantRole` / `revokeRole`). The `markets` table (PRD §5.1)
+likely lands here too. See §8 for the full handoff.
 
 ### Deployment
 
@@ -188,22 +215,34 @@ Supabase reads/writes work in production).
 - **Build command / output:** Next.js defaults (`next build`,
   `.next/`). No custom Vercel config file in repo.
 
-### Simulation vs. real — current boundary
+### Where each piece lives (post-Segment-4)
 
-| Piece                         | Where it lives now              |
-|-------------------------------|---------------------------------|
-| Policy create / read / claim  | **Supabase `policies` table**   |
-| User balance                  | In-memory `useSimulationStore` (no DB table) |
-| Activity feed                 | In-memory `useSimulationStore` (no DB table; PRD §5.3 reserved for later) |
-| Markets / Signa orders        | Seed data in `lib/mock/{orders,policies}.ts` (PRD §5.1 / §7 reserved for later) |
-| Wallet connection             | Real wagmi (BSC Testnet, MetaMask injected) |
-| On-chain mint / claim         | Not wired — Segment 4 |
+| Piece                            | Source of truth                                                                       |
+|----------------------------------|---------------------------------------------------------------------------------------|
+| Policy create (mint)             | **Chain** (`CoverFiPolicy.buyPolicy`) → frontend optimistic-writes the DB mirror.     |
+| Policy claim                     | **Chain** (`CoverFiPolicy.claim`) → frontend writes the DB mirror after tx confirms.  |
+| Policy settlement (Miss/Hit/Void)| **Chain** (`CoverFiPolicy.triggerSettlement`) via `contracts/scripts/settle.ts` (project EOA holds `SETTLER_ROLE`); the same script writes the DB mirror. Segment 5 replaces with a Signa-adapter contract. |
+| Policy list page (status / static fields) | DB (`listPoliciesByOwner`).                                                  |
+| Policy detail page (status / released / claimable / claimed) | **Chain** via three `useReadContract` hooks against `policies(id)` + `releasedOf(id)` + `claimableOf(id)`. DB is consulted for static fields only (principal, owner, market text). |
+| Policy overview header (released / claimable totals) | **Chain** via batched `useReadContracts` across all releasing/completed policies. DB for the static three cards. |
+| User USDC balance                | **Chain** via `useReadContract(MockUSDC.balanceOf)`.                                  |
+| Activity feed                    | Hidden — `useSimulationStore.activities` initialised `[]`; on-chain event indexer is deferred (PRD §5.3 / see §9). |
+| Markets / Signa orders           | Still seed (`lib/mock/orders.ts`) — Segment 5.                                        |
+| Wallet connection                | Real wagmi (BSC Testnet, MetaMask injected).                                          |
+
+DB is **the index mirror** for chain state — sufficient for fast list
+queries and offline reads, refreshed by the same code path that wrote
+chain (mint / claim / settle scripts). No automatic event indexer
+yet; if the mirror diverges, `npm run snapshot` from `contracts/`
+prints chain ↔ DB side by side.
 
 End-to-end happy path: connect wallet → browse seeded Signa orders →
-review → pay → policy row inserted into Supabase → land on detail page
-(reads row back from DB) → claim → DB row's `claimed` + `status`
-updated → refresh persists everything except balance / activity (which
-reset to seed on reload, by design until those tables land).
+review (live `qBps` from chain + bigint premium quote) → approve
+USDC → buyPolicy → policy minted on chain → frontend inserts DB
+mirror row → detail page reads chain for live status + released +
+claimable → claim → DB row updated. Settle is offline:
+`node scripts/settle.ts --policy <id> --outcome miss|hit|void` from
+`contracts/` advances the lifecycle and syncs the DB.
 
 ## 6. Working conventions (HARD requirements)
 
@@ -219,15 +258,28 @@ reset to seed on reload, by design until those tables land).
   premium / release / claim formulas. `lib/pricing.ts` has inline PRD
   section pointers (`§3.2`, `§3.3`) — keep them current if helpers
   change.
-- **Simulation, not contracts.** Wallet connection is real, and
-  policy rows now persist to Supabase (Segment 3). But balance /
-  Activity remain in-memory in `useSimulationStore`, and no on-chain
-  transaction is ever sent — mint / claim are simulated "payments"
-  that just write to the DB. Real on-chain calls are Segment 4. Do
-  NOT prematurely:
-  - switch `number` USDC amounts to `bigint` wei
-  - read real USDC balance via `useBalance`
-  - introduce token-contract addresses
+- **Chain is the source of truth, DB is the mirror.** Mint, claim,
+  and settlement all run real BSC Testnet transactions. The
+  Supabase `policies` table is an index of those events, kept in
+  sync by the same code path that wrote the chain side (frontend
+  optimistic-writes for mint/claim; `settle.ts` for settlement).
+  Working conventions that follow from this:
+  - Never mutate the DB mirror before the matching chain tx
+    confirms; on chain failure the DB stays untouched.
+  - For released / claimable amounts on /policies and the detail
+    page, read live from the contract via `useReadContract` —
+    they're time-derived (per-second accrual) and any
+    `Math.floor(days)` approximation underreports. List page can
+    rely on DB `status`; the detail page reads even `status` from
+    chain (`policies(id).status`) for full freshness.
+  - Money math uses `bigint` wei and bps integer arithmetic
+    (`src/lib/pricing.bigint.ts`); the legacy float helpers in
+    `src/lib/pricing.ts` remain only because the dead
+    `useSimulationStore.claimPolicy / claimAll` actions still
+    import them. See §9 for the cleanup TODO.
+  - New DB fields need a migration under `supabase/migrations/`
+    AND the matching update in `supabase/schema.sql` (single
+    source of truth for fresh deploys).
 - **Bilingual everywhere.** All user-facing text comes from
   `src/lib/i18n/{en,zh}.ts` via `useT()`. New text adds keys in both
   files (TypeScript enforces shape match via the `Dict` type derived
@@ -289,18 +341,43 @@ src/
   lib/
     i18n/                    en.ts (source of truth), zh.ts, types.ts, index.ts
     mock/                    orders.ts, policies.ts, activity.ts, index.ts
-                             (orders + activity still seed-only; `policies.ts`
-                             type defs are still load-bearing — actual policy
-                             rows now come from Supabase, not this seed)
+                             (orders still seed-only — Segment 5 replaces;
+                             `policies.ts` type defs are still load-bearing —
+                             actual policy rows come from Supabase mirror of
+                             chain; `activity.ts` seed is no longer loaded
+                             into the store — see §9 deferred work)
     db/
       policies.ts            Supabase data-access layer: insertPolicy(),
                              listPoliciesByOwner(), getPolicyById(),
                              updatePolicyClaim() + DB-row → Policy mapper
-                             (numeric → number, timestamptz → days-ago).
+                             (numeric → number, chain_policy_id → bigint,
+                             timestamptz → days-ago, tx_hash passthrough).
                              All writes lowercase the wallet address; reads
-                             scope by owner_address.
+                             scope by owner_address; updatePolicyClaim
+                             scoped by chain_policy_id.
+    contracts/
+      abi/                   AUTOGENERATED `as const` ABI exports
+                             (MockUSDC.ts, CoverFiPolicy.ts).
+                             Refresh via `node contracts/scripts/sync-abi.mjs`.
+      addresses.ts           Chain-id → deployed-address map; `getContractAddresses()`
+                             helper. Currently BSC Testnet (97) only.
+      index.ts               Typed viem `getContract` factories +
+                             `orderHashOf(orderId)` / `optionHashOf(label)` /
+                             `formatPolicyId(chainPolicyId)` helpers.
+      errors.ts              wagmi/viem error classifiers: `isUserRejection(e)`,
+                             `revertedWith(e) → string | null`.
     config.ts                Q_DEFAULT, F, RELEASE_DAYS, getPricingQ() async stub
+                             (legacy — `qBps` is now read live from chain).
     pricing.ts               kOf, premiumOf, releasedOf, claimableOf, bucketOf
+                             (float helpers — `releasedOf`/`claimableOf` are
+                             dead in UI paths after Phase F, kept only because
+                             retired `simulation.ts` actions still import. §9 cleanup).
+    pricing.bigint.ts        Strict 1:1 mirror of CoverFiPolicy.sol's integer
+                             math — `premiumOf({principal, kBps, qBps})`,
+                             `releasedOf({...})`, `claimableOf({...})`.
+                             Used by the review page's bigint quote path.
+    pricing.bigint.test.ts   24 deterministic unit tests via Node's built-in
+                             `node:test`. Run: `node --test src/lib/pricing.bigint.test.ts`.
     wagmi.ts                 BSC Testnet + injected() config
     supabase.ts              Singleton Supabase client (browser SDK only —
                              no @supabase/ssr; identity is the wallet
@@ -312,8 +389,24 @@ public/wallets/metamask.svg   official MetaMask fox SVG (used in picker)
 supabase/
   schema.sql                  Single source of truth for the DB schema —
                               `policies` table (PRD §5.2), CHECK constraints,
-                              owner_address index, demo-phase RLS policies.
-                              Apply via the Supabase SQL editor.
+                              owner_address index, chain_policy_id unique,
+                              tx_hash NOT NULL, demo-phase RLS policies.
+                              Apply via the Supabase SQL editor for fresh deploys.
+  migrations/
+    0001_chain_link.sql       Migration on top of baseline: truncate + add
+                              `tx_hash` + `chain_policy_id` columns + the
+                              unique constraint. Ran once via Supabase
+                              SQL editor at E3.
+
+contracts/                    Standalone Hardhat 3 subproject — CoverFiPolicy
+                              + MockUSDC. Self-contained npm project (its
+                              own `package.json`, `node_modules`, `.env`).
+                              See `contracts/README.md` for toolchain,
+                              local commands, deployment + verify scripts,
+                              and `contracts/AUDIT.md` for the AI security
+                              review and accepted v1 limitations.
+                              `contracts/scripts/snapshot.ts` is the
+                              chain↔DB diagnostic — `npm run snapshot`.
 
 _docs/                        PRD.md + prototype.html (1:1 baseline)
 memory/                       In-session Claude Code memory artifacts from the
@@ -334,15 +427,24 @@ Notes:
 - The wallet store **only tracks UI flow** (`idle` / `picker` /
   `connecting`). Real connection state (`isConnected`, `address`,
   `chainId`) comes from wagmi's `useAccount` / `useChainId`.
-- The simulation store still owns `balance` (default 2450 USDC),
-  `activities`, `insuredOrderIds`, `nextPolicyCounter` (starts at
-  232) and the in-memory `policies` slice. The policies slice is
-  **no longer read by /policies or the detail page** (they read
-  from Supabase via `lib/db/policies.ts`); it's kept around so the
-  store-side `claimPolicy` / `claimAll` mirrors can update balance
-  + activity for in-session-minted rows. Mint flow: `insertPolicy()`
-  (DB) → `mintPolicy(id, …)` (store). Claim flow: `updatePolicyClaim()`
-  (DB) → `claimPolicy(id)` / `claimAll()` (store mirror).
+- The simulation store is in **partial retirement**. The
+  `markInsured(orderId)` action is still load-bearing — /insurance
+  uses `insuredOrderIds` to hide just-bought orders within the
+  session. The other action slices (`mintPolicy` / `claimPolicy` /
+  `claimAll` + `balance` + `activities` + `nextPolicyCounter`) are
+  all dead after Phase E (no callers); they still exist because the
+  refactor to gut them is its own task — tracked in §9.
+- Mint flow today: review page → `coverFi.approve` → `coverFi.buyPolicy`
+  → wait receipt → parse `PolicyMinted` event → `insertPolicy()`
+  (DB mirror) → `markInsured(orderId)` (in-session hide).
+- Claim flow today: detail page → `coverFi.claim(chainPolicyId)` →
+  wait receipt → refetch chain reads → `updatePolicyClaim({
+  chainPolicyId, claimedWei, status })` (DB mirror with fresh chain
+  values).
+- Settle flow today: `contracts/scripts/settle.ts --policy <id>
+  --outcome miss|hit|void` from a settler-keyed CLI (project EOA);
+  the script also writes the DB mirror. Segment 5 retires this in
+  favour of an on-chain Signa adapter.
 - `globals.css` is large but organised top-to-bottom by feature.
   Search for the section comment (e.g. `/* === Portfolio ... */`)
   before adding new CSS. Always honor the "one @media block per
@@ -350,35 +452,112 @@ Notes:
 
 ## 8. Remaining segments
 
-Per PRD §10, the broader v1 scope still has these segments ahead of us.
-Segments 2 (frontend) and 3 (database) are done — see §5.
+Per PRD §10, the broader v1 scope still has these segments ahead.
+Segments 2 (frontend), 3 (database), 4 (smart contracts) — all
+done; see §5.
 
-- **Segment 4 — Smart contracts (next).** `CoverFiPolicy.sol` per
-  PRD §8: `buyPolicy`, `triggerSettlement`, `claim`. Deployed to
-  BSC Testnet, AI-audited per PRD §8.3. Then **real contract
-  wiring** — replace the simulated mint / claim "payments" with
-  wagmi `useWriteContract` calls; the DB persistence layer added
-  in Segment 3 becomes the indexer for emitted events instead of
-  the primary writer. **Switch all `number` USDC amounts to
-  `bigint` wei** per PRD §3.2 precision requirement; `lib/pricing.ts`
-  will need bigint variants of `premiumOf` / `releasedOf` /
-  `claimableOf`. Also: pull real USDC balance via `useBalance`,
-  retire the in-memory `balance` slice.
-- **Segment 5 — Signa adapter** (PRD §7) — once Signa documentation
-  lands. Replaces `lib/mock/orders.ts` with real Signa-sourced
-  orders behind the adapter interface stubbed in PRD §7.1. The
-  `markets` table (PRD §5.1) likely lands here too, replacing the
-  denormalised bilingual market/option columns currently on
-  `policies` with a proper FK.
-- **Segment 6 — Admin backend** (PRD §4A) — dedicated `/admin/*`
-  routes for tuning `Q` and managing the market whitelist (and a
-  `config` table per PRD §4A.5). `lib/config.ts` exposes
-  `getPricingQ()` as an async stub so the swap is one line at the
-  call sites.
-- **Activity persistence** — PRD §5.3 reserves an `activities` table;
-  the in-memory activity feed gets backed by it (probably alongside
-  Segment 4 so it indexes real on-chain events).
+- **Segment 5 — Signa adapter (next).** PRD §7. Once Signa testnet
+  documentation lands, two parallel tracks:
+  - Frontend / data: replace `lib/mock/orders.ts` with real
+    Signa-sourced orders behind the `SignaAdapter` interface
+    stubbed in PRD §7.1; add the `markets` whitelist table
+    (PRD §5.1) and migrate the denormalised bilingual
+    market/option columns on `policies` to a proper FK.
+  - Contracts: write a `SignaAdapter.sol` that reads Signa
+    settlement state and calls `CoverFiPolicy.triggerSettlement`.
+    Migrate the role with `grantRole(SETTLER_ROLE, signaAdapter)`
+    + `revokeRole(SETTLER_ROLE, projectEOA)` — **CoverFiPolicy
+    itself doesn't change**. `contracts/scripts/settle.ts`
+    retires at this point.
+- **Segment 6 — Admin backend** (PRD §4A). Dedicated `/admin/*`
+  routes for tuning `Q` and managing the market whitelist; plus
+  a `config` table per PRD §4A.5. `lib/config.ts` exposes
+  `getPricingQ()` as an async stub — currently a no-op fallback
+  since `qBps` is read directly from the chain, but the admin
+  backend can drive that read off a hybrid (chain truth +
+  mirrored audit log).
 
-Segment boundaries are negotiable as priorities shift, but the
-"contracts next" call is firm — everything else is easier to wire
-up once the on-chain truth exists.
+### Segment 4 → Segment 5 handoff
+
+**What Segment 4 delivered:**
+- `CoverFiPolicy.sol` + `MockUSDC.sol` deployed and verified on BSC
+  Testnet (addresses in §5).
+- Three real on-chain policies exercised end-to-end: policy 1
+  Releasing (Miss settled, partially claimed), policy 2 Hit, policy 3
+  Void (premium refund auto-fired).
+- Frontend mint / claim / status / balance all read & write the
+  chain; DB is the index mirror, kept in sync by the same code paths.
+- AI security audit (`contracts/AUDIT.md`) — High items all fixed
+  or accepted-with-mitigation; QUOTER_ROLE placeholder + multisig
+  requirement noted for pre-mainnet.
+- `settle.ts` script holds `SETTLER_ROLE` via the project EOA —
+  the role hook Segment 5 needs.
+
+**What Segment 5 starts from:**
+1. Get Signa testnet contract addresses + developer docs (PRD §7.2
+   open items — none answered yet).
+2. Write `SignaAdapter.sol`: minimal facade implementing PRD §7.1's
+   `getOrdersByAddress` / `getOrderById` / `getMarketSettlement`,
+   either as on-chain reads against Signa or off-chain via a backend
+   service the adapter trusts. Add the corresponding
+   `triggerSettlement` call when Signa emits a settlement event the
+   adapter is listening to.
+3. Frontend: swap `lib/mock/orders.ts` → `lib/signa.ts` (calls
+   adapter); update `InsuranceList` / `OrderCard` / `ReviewPage`
+   accordingly. `orderHashOf()` already abstracts the on-chain
+   identifier — only the upstream id format changes.
+4. Add `markets` table per PRD §5.1; migrate `policies.{category_en,
+   category_zh, market_en, market_zh, option_en, option_zh}` to a
+   `market_id` FK (with a backfill step for the three existing
+   policies).
+5. Role migration: `coverFi.grantRole(SETTLER_ROLE, signaAdapter)`
+   then `coverFi.revokeRole(SETTLER_ROLE, projectEOA)`. Delete
+   `contracts/scripts/settle.ts` and the `SUPABASE_URL` /
+   `SUPABASE_PUBLISHABLE_KEY` env vars in `contracts/.env` (no
+   longer needed once the script is gone).
+
+**Pre-mainnet items NOT in Segment 5 scope but tracked:**
+- `QUOTER_ROLE` signed-quote upgrade (the `kBps` trust-the-caller
+  acceptance from `contracts/AUDIT.md`).
+- Mainnet `DEFAULT_ADMIN_ROLE` → multisig + timelock.
+- Professional security audit (current is AI-only).
+- Solvency mechanism (currently project-pre-funded payout pool).
+
+## 9. Deferred TODOs
+
+Concrete cleanup / hardening items deliberately deferred past
+Segment 4 — listed here so they don't get lost when sessions roll
+over.
+
+- **Event-indexer for activities table.** PRD §5.3 reserves an
+  `activities` table; today `useSimulationStore.activities` is
+  initialised `[]` and the /policies "Recent activity" panel is
+  hidden via the existing length-guard. Wire a Supabase Edge
+  Function or Vercel cron to subscribe to `PolicyMinted` /
+  `PolicySettled` / `PolicyRefunded` / `PolicyClaimed` and insert
+  rows; flip the panel back on with `ActivityFeed` reading from DB.
+- **Retire `useSimulationStore` dead methods.** `claimPolicy` /
+  `claimAll` / `mintPolicy` actions + `balance` / `activities` /
+  `nextPolicyCounter` / in-memory `policies` slice — all unreachable
+  after Phase E. Removing them lets `lib/pricing.ts`'s float
+  `releasedOf` / `claimableOf` go too (their only remaining
+  importers). Keep `markInsured` + `insuredOrderIds` — still used
+  by /insurance to hide just-bought orders within a session.
+- **Batch `Claim All`.** Currently disabled with an inline hint
+  ("open each policy to claim individually"). Needs either a new
+  `CoverFiPolicy.claimMultiple(uint256[])` method (contract upgrade
+  + re-deploy + re-verify) or a Multicall3 integration on the
+  frontend. Defer until user demand is clear.
+- **Curve x-axis cap precision.** `ReleaseCurve` uses
+  `policy.settledDaysAgo` (integer days from the DB row) for its
+  cap position, while the relrow below it shows live chain values
+  with full precision. Visual mismatch within the first 24h. Fix
+  by deriving a fractional cap from the chain `released / principal`
+  ratio or by piping `releasedWei` directly into ReleaseCurve.
+- **`mintedDaysAgo` / `voidedDaysAgo` precision.** `rowToPolicy`
+  still uses `Math.floor` days; only the StatusTimeline detail
+  text consumes them. Low impact, low priority — bundle with the
+  ReleaseCurve fix if you're already in there.
+- **kBps signed-quote model.** Pre-mainnet hardening (audit High
+  finding). Activate `QUOTER_ROLE`; require a quote signature in
+  `buyPolicy`. Contract upgrade — needs new deploy + re-audit.
