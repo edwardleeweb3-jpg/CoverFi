@@ -3,7 +3,6 @@
 import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
 import { useT } from "@/hooks/useT";
-import { claimableOf, releasedOf } from "@/lib/pricing";
 import { RELEASE_DAYS } from "@/lib/config";
 import { money } from "@/lib/format";
 import type { Policy, PolicyStatus } from "@/lib/mock";
@@ -13,19 +12,24 @@ interface Props {
   policy: Policy;
   onClaim: () => void;
   busy: boolean;
-  /**
-   * Optional chain-sourced overrides — when provided, displace the
-   * pricing-helper-derived values. Used by the detail page (E4) to
-   * surface live `releasedOf` / `claimableOf` / `policies(id).claimed`
-   * / `policies(id).status` from the contract, which are the
-   * authoritative time-derived figures the DB can't track. `null`
-   * means "chain read hasn't loaded yet" — fall back to the local
-   * computation so the page renders something immediately.
-   */
-  releasedOverride?: number | null;
-  claimableOverride?: number | null;
-  claimedOverride?: number | null;
-  statusOverride?: PolicyStatus;
+  /** Live values read from the chain by the parent (detail page).
+   *  `null` while wagmi's `useReadContract` hasn't returned data
+   *  yet — the relrow / progress / claim button all render a
+   *  loading sentinel ("—" / 0% width / disabled button) when so.
+   *  Once loaded, these are the authoritative numbers and match
+   *  PolicyOverview + PolicyRow + the contract to the wei.
+   *
+   *  No fallback to `lib/pricing.ts` here on purpose: the float
+   *  helpers compute from `settledDaysAgo` (a day-floored DB
+   *  derivative) and that approximation was the source of the
+   *  Phase F-3 "first 24h shows 0" bug. Better to show "—" for
+   *  the brief load window than to show a wrong value. */
+  released: number | null;
+  claimable: number | null;
+  claimed: number | null;
+  /** Status as known to the chain — detail page reads it live and
+   *  falls back to DB only for first-paint. */
+  status: PolicyStatus;
 }
 
 /**
@@ -44,29 +48,29 @@ export function ReleaseBlock({
   policy,
   onClaim,
   busy,
-  releasedOverride,
-  claimableOverride,
-  claimedOverride,
-  statusOverride,
+  released,
+  claimable,
+  claimed,
+  status,
 }: Props) {
   const t = useT();
-  const status = statusOverride ?? policy.status;
   const good = status === "completed";
-  const released =
-    releasedOverride !== undefined && releasedOverride !== null
-      ? releasedOverride
-      : releasedOf(policy);
-  const claimable =
-    claimableOverride !== undefined && claimableOverride !== null
-      ? claimableOverride
-      : claimableOf(policy);
-  const claimed =
-    claimedOverride !== undefined && claimedOverride !== null
-      ? claimedOverride
-      : (policy.claimed ?? 0);
+  // ReleaseCurve still uses the day-floored `settledDaysAgo` for its
+  // x-position cap — it's a visual estimate, not the authoritative
+  // released number (that's the relrow / progress line below). Will
+  // show a sub-day curve at day 0 for the first 24h post-settle;
+  // acceptable visual approximation.
   const cap = Math.min(policy.settledDaysAgo ?? 0, RELEASE_DAYS);
-  const pctRaw = (released / policy.a) * 100;
+  const pctRaw = released === null ? 0 : (released / policy.a) * 100;
   const pctTxt = pctRaw.toFixed(1);
+
+  // 0.01 USDC threshold = the display resolution (`money()` uses 2
+  // decimal places). Below this the button would read "Claim 0.00
+  // USDC" while still being clickable — misleading and wastes the
+  // user's gas. `null` means "chain read still loading" — same
+  // treatment, button disabled.
+  const claimAmount =
+    claimable !== null && claimable >= 0.01 ? claimable : null;
 
   return (
     <Panel title={t.principalRelease} className="release-block">
@@ -84,47 +88,46 @@ export function ReleaseBlock({
       <div className="relrow">
         <div className="c">
           <div className="l">{t.released}</div>
-          <div className="v">{money(released)}</div>
+          <div className="v">{released === null ? "—" : money(released)}</div>
         </div>
         <div className="c">
           <div className="l">{t.claimed}</div>
-          <div className="v">{money(claimed)}</div>
+          <div className="v">{claimed === null ? "—" : money(claimed)}</div>
         </div>
         <div className={`c${good ? "" : " acc"}`}>
           <div className="l">{t.claimableNowCol}</div>
-          <div className="v">{money(claimable)}</div>
+          <div className="v">
+            {claimable === null ? "—" : money(claimable)}
+          </div>
         </div>
       </div>
 
       <div className={`progress${good ? " g" : ""}`}>
-        <div className="fill" style={{ width: `${pctTxt}%` }} />
+        <div
+          className="fill"
+          style={{ width: released === null ? "0%" : `${pctTxt}%` }}
+        />
       </div>
       <div className="release-ofline">
-        {t.ofReleased(money(released), money(policy.a), pctTxt)}
+        {released === null
+          ? "—"
+          : t.ofReleased(money(released), money(policy.a), pctTxt)}
       </div>
 
       {good ? (
         <div className="notebox release-done">{t.fullReimbursed}</div>
       ) : (
-        // 0.01 USDC threshold = the display resolution (`money()`
-        // uses 2 decimal places). Below this the button would read
-        // "Claim 0.00 USDC" while still being clickable, which is
-        // both misleading and wastes the user's gas. Above the
-        // threshold the button enables with the real amount.
-        (() => {
-          const canClaim = claimable >= 0.01;
-          return (
-            <Button
-              variant="primary"
-              block
-              className="release-claim-btn"
-              onClick={onClaim}
-              disabled={!canClaim || busy}
-            >
-              {canClaim ? t.claimBtn(money(claimable)) : t.nothingClaim}
-            </Button>
-          );
-        })()
+        <Button
+          variant="primary"
+          block
+          className="release-claim-btn"
+          onClick={onClaim}
+          disabled={claimAmount === null || busy}
+        >
+          {claimAmount === null
+            ? t.nothingClaim
+            : t.claimBtn(money(claimAmount))}
+        </Button>
       )}
     </Panel>
   );

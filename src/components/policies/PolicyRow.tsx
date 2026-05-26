@@ -1,9 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useReadContract } from "wagmi";
+import { formatUnits } from "viem";
 import { Badge } from "@/components/ui/Badge";
 import { useLocale, useT } from "@/hooks/useT";
-import { claimableOf, releasedOf, type PolicyBucket } from "@/lib/pricing";
+import {
+  coverFiPolicyAbi,
+  getContractAddresses,
+} from "@/lib/contracts";
+import { type PolicyBucket } from "@/lib/pricing";
 import { money } from "@/lib/format";
 import type { Policy, PolicyStatus } from "@/lib/mock";
 import type { Dict } from "@/lib/i18n";
@@ -12,6 +18,8 @@ interface Props {
   policy: Policy;
   bucket: PolicyBucket;
 }
+
+const USDC_DECIMALS = 6;
 
 type BadgeVariant = "default" | "signal" | "good";
 
@@ -38,18 +46,56 @@ function statusBadgeProps(
  * left-edge accent color (via `.prow.s-{bucket}`) mirrors the bucket
  * (signal/good/text-3/line-3). Right-side figure + bar differ per bucket:
  *
- *   paying   → "Claimable XX USDC" + release progress bar
- *   paid     → "Recovered XX USDC" + 100%-filled bar
+ *   paying   → "Claimable XX USDC" + release progress bar  ← CHAIN reads
+ *   paid     → "Recovered XX USDC" + 100%-filled bar       ← static
  *   covered  → "Coverage XX USDC"  (no bar, nothing released yet)
- *   nopay    → "Premium kept XX USDC" (terminal, no payout)
+ *   nopay    → "Premium kept / refunded XX USDC"           ← static
+ *
+ * The `paying` bucket reads `releasedOf` and `claimableOf` live from
+ * the contract (matches PolicyOverview + detail page; the previous
+ * float-based port underreported in the first 24h after settlement
+ * due to its day-floor precision). Other buckets render from static
+ * fields and don't need chain reads; their useReadContract hooks
+ * still fire (rules of hooks) but with `enabled: false` so no RPC.
  */
 export function PolicyRow({ policy, bucket }: Props) {
   const t = useT();
   const { lang } = useLocale();
 
-  const released = releasedOf(policy);
-  const claimable = claimableOf(policy);
-  const pc = (released / policy.a) * 100;
+  const COVER_FI = getContractAddresses().coverFiPolicy;
+  const enabled =
+    bucket === "paying" && policy.chainPolicyId !== undefined;
+
+  const { data: releasedWei } = useReadContract({
+    address: COVER_FI,
+    abi: coverFiPolicyAbi,
+    functionName: "releasedOf",
+    args:
+      policy.chainPolicyId !== undefined
+        ? [policy.chainPolicyId]
+        : undefined,
+    query: { enabled },
+  });
+  const { data: claimableWei } = useReadContract({
+    address: COVER_FI,
+    abi: coverFiPolicyAbi,
+    functionName: "claimableOf",
+    args:
+      policy.chainPolicyId !== undefined
+        ? [policy.chainPolicyId]
+        : undefined,
+    query: { enabled },
+  });
+
+  const released =
+    releasedWei !== undefined
+      ? Number(formatUnits(releasedWei, USDC_DECIMALS))
+      : null;
+  const claimable =
+    claimableWei !== undefined
+      ? Number(formatUnits(claimableWei, USDC_DECIMALS))
+      : null;
+  const pc = released !== null ? (released / policy.a) * 100 : 0;
 
   const badge = statusBadgeProps(policy.status, t);
   const cat = lang === "zh" ? policy.catZh : policy.catEn;
@@ -64,7 +110,7 @@ export function PolicyRow({ policy, bucket }: Props) {
       <>
         <div className="fk">{t.claimable}</div>
         <div className="fv sig">
-          {money(claimable)}
+          {claimable === null ? "—" : money(claimable)}
           <span className="fu">USDC</span>
         </div>
       </>
@@ -72,10 +118,12 @@ export function PolicyRow({ policy, bucket }: Props) {
     bar = (
       <div className="prow-bar">
         <div className="pbar">
-          <i style={{ width: `${pc.toFixed(0)}%` }} />
+          <i style={{ width: released === null ? "0%" : `${pc.toFixed(0)}%` }} />
         </div>
         <span className="pbt">
-          {money(released)} / {money(policy.a)} · {pc.toFixed(0)}%
+          {released === null
+            ? "—"
+            : `${money(released)} / ${money(policy.a)} · ${pc.toFixed(0)}%`}
         </span>
       </div>
     );

@@ -328,10 +328,10 @@ export function PolicyDetailPage({ policyId }: Props) {
             {showReleaseBlock ? (
               <ReleaseBlock
                 policy={policy}
-                releasedOverride={releasedDisplay}
-                claimableOverride={claimableDisplay}
-                claimedOverride={claimedDisplay}
-                statusOverride={effectiveStatus}
+                released={releasedDisplay}
+                claimable={claimableDisplay}
+                claimed={claimedDisplay}
+                status={effectiveStatus}
                 onClaim={handleClaim}
                 busy={phase === "claiming"}
               />
