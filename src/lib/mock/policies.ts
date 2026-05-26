@@ -59,6 +59,19 @@ export interface Policy {
 
   /** Cumulative amount already claimed (USDC). Defaults to 0 if absent. */
   claimed?: number;
+
+  /**
+   * uint256 policy id from `CoverFiPolicy.PolicyMinted.policyId`,
+   * populated by the DB-row mapper when reading from Supabase
+   * (Segment 4 / Phase E). The on-chain authority for everything
+   * dynamic (status, claimed, releasedOf, claimableOf); the
+   * `id` above is the human-readable mirror.
+   */
+  chainPolicyId?: bigint;
+
+  /** `buyPolicy()` tx hash. Used for BscScan deep-links from the
+   *  detail page. Same provenance as `chainPolicyId`. */
+  txHash?: string;
 }
 
 export const POLICIES: readonly Policy[] = [

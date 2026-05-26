@@ -8,8 +8,15 @@ import type { Policy } from "@/lib/mock";
 
 interface Props {
   policies: Policy[];
-  onClaimAll: () => void;
-  busy: boolean;
+  /** Optional — kept for future "real batch claim" support. When
+   *  `batchHint` is set, the button is replaced by the hint text
+   *  instead of being rendered. */
+  onClaimAll?: () => void;
+  busy?: boolean;
+  /** When set, the Claim All button is replaced by this hint text.
+   *  Used post-E4: the CoverFiPolicy contract has no batch method,
+   *  so per-policy claim is the only path. */
+  batchHint?: string;
 }
 
 /**
@@ -26,7 +33,12 @@ interface Props {
  * releasing/completed; it shows the aggregated release progress and the
  * batch Claim All button (only when there's something to claim).
  */
-export function PolicyOverview({ policies, onClaimAll, busy }: Props) {
+export function PolicyOverview({
+  policies,
+  onClaimAll,
+  busy,
+  batchHint,
+}: Props) {
   const t = useT();
 
   const totalPrincipal = policies.reduce((s, p) => s + p.a, 0);
@@ -96,16 +108,26 @@ export function PolicyOverview({ policies, onClaimAll, busy }: Props) {
               <b>{money(relReleased)}</b> / {money(relTotal)} USDC
             </span>
             <span className="pf-rel-pct">{relPct.toFixed(1)}%</span>
-            {claimable > 0 && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={onClaimAll}
-                disabled={busy}
-              >
-                {t.claimAll} · {money(claimable)} USDC
-              </Button>
-            )}
+            {claimable > 0 &&
+              (batchHint !== undefined ? (
+                <span
+                  className="pf-rel-fig"
+                  style={{ fontStyle: "italic", opacity: 0.75 }}
+                >
+                  {batchHint}
+                </span>
+              ) : (
+                onClaimAll && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={onClaimAll}
+                    disabled={busy}
+                  >
+                    {t.claimAll} · {money(claimable)} USDC
+                  </Button>
+                )
+              ))}
           </div>
         )}
       </div>

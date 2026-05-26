@@ -201,40 +201,39 @@ export type UpdatePolicyClaimResult =
   | { ok: false; reason: "other"; message: string };
 
 /**
- * Persist a single-policy claim. Scoped to (id, owner_address) so
- * the request can never touch another wallet's row — even if a
- * caller passes a foreign id, the UPDATE will simply match 0 rows
- * and we surface `not-found`.
+ * Persist a single-policy claim. Scoped to
+ * (chain_policy_id, owner_address) so the request can never touch
+ * another wallet's row — even if a caller passes a foreign id, the
+ * UPDATE will simply match 0 rows and we surface `not-found`.
  *
- * Writes only the fields the in-memory claim mutation actually
- * changes today (see `applyClaimMutation` in PoliciesPage.tsx):
+ * `chain_policy_id` is the authoritative lookup key (E3+ guarantees
+ * it's NOT NULL on every row); `owner_address` is a defense-in-depth
+ * scope. The human-readable `id` is derived from `chainPolicyId`
+ * elsewhere and isn't part of the WHERE.
  *
- *   - `claimed`: bumped to `releasedOf(policy)` at claim time.
- *   - `status`:  flips to `'completed'` once released ≈ principal
- *                (within the 0.01-USDC epsilon used in the
- *                simulation); otherwise unchanged.
- *
- * Balance + activity are deliberately NOT touched here — they don't
- * have DB tables yet (PRD §5 only defines `markets` / `policies` /
- * `activities` / `config`; `activities` is out of scope for this
- * segment and balance is on-chain in the contract phase).
- *
- * `.select("id")` lets us distinguish "row did not exist (or wasn't
- * yours)" from a true error — without it, supabase-js reports the
- * 0-row case as success.
+ * The two writable fields:
+ *   - `claimed`: post-claim cumulative claimed (read fresh from chain
+ *                via `policies(id).claimed` after the claim tx confirms).
+ *                Comes in as wei; converted to "X.XXXXXX" string for
+ *                the numeric(20,6) column.
+ *   - `status`:  current chain status (read fresh via
+ *                `policies(id).status` after the claim tx). The
+ *                caller maps the uint8 enum to the PolicyStatus
+ *                string before passing in.
  */
 export async function updatePolicyClaim(input: {
-  id: string;
+  chainPolicyId: bigint;
   ownerAddress: string;
-  claimed: number;
+  claimedWei: bigint;
   status: PolicyStatus;
 }): Promise<UpdatePolicyClaimResult> {
+  const claimedUsdc = formatUnits(input.claimedWei, USDC_DECIMALS);
   const { data, error } = await supabase
     .from("policies")
-    .update({ claimed: input.claimed, status: input.status })
-    .eq("id", input.id)
+    .update({ claimed: claimedUsdc, status: input.status })
+    .eq("chain_policy_id", input.chainPolicyId.toString())
     .eq("owner_address", input.ownerAddress.toLowerCase())
-    .select("id");
+    .select("chain_policy_id");
   if (error) return { ok: false, reason: "other", message: error.message };
   if (!data || data.length === 0) return { ok: false, reason: "not-found" };
   return { ok: true };
@@ -264,6 +263,12 @@ interface PolicyRow {
   created_at: string;          // ISO timestamp
   settled_at: string | null;
   voided_at: string | null;
+  /** Migration 0001 — NOT NULL after E3. May arrive as `string` (the
+   *  numeric column path) or `number` (if supabase-js managed to
+   *  coerce a small enough value); BigInt() handles both. */
+  chain_policy_id: string | number;
+  /** Migration 0001 — NOT NULL after E3. */
+  tx_hash: string;
 }
 
 /**
@@ -298,6 +303,8 @@ function rowToPolicy(row: PolicyRow): Policy {
     premium: Number(row.premium),
     status: row.status as PolicyStatus,
     mintedDaysAgo: daysBetween(row.created_at, now),
+    chainPolicyId: BigInt(row.chain_policy_id),
+    txHash: row.tx_hash,
   };
   if (row.settled_at) {
     policy.settledDaysAgo = daysBetween(row.settled_at, now);

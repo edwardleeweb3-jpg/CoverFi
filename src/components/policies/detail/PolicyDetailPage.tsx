@@ -2,7 +2,19 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useAccount } from "wagmi";
+import {
+  useAccount,
+  useChainId,
+  usePublicClient,
+  useReadContract,
+  useWriteContract,
+} from "wagmi";
+import {
+  formatUnits,
+  parseEventLogs,
+  type Hex,
+  type TransactionReceipt,
+} from "viem";
 import { useHasMounted } from "@/hooks/useHasMounted";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -10,13 +22,17 @@ import { Modal } from "@/components/ui/Modal";
 import { Panel } from "@/components/ui/Panel";
 import { Spinner } from "@/components/ui/Spinner";
 import { GatedView } from "@/components/policies/GatedView";
-import { applyClaimMutation } from "@/components/policies/PoliciesPage";
 import { useT } from "@/hooks/useT";
 import { getPolicyById, updatePolicyClaim } from "@/lib/db/policies";
-import type { Policy } from "@/lib/mock";
-import { claimableOf } from "@/lib/pricing";
-import { money } from "@/lib/format";
-import { useSimulationStore } from "@/stores/simulation";
+import type { Policy, PolicyStatus } from "@/lib/mock";
+import { money, shortAddress } from "@/lib/format";
+import {
+  BSC_TESTNET_CHAIN_ID,
+  coverFiPolicyAbi,
+  getContractAddresses,
+} from "@/lib/contracts";
+import { isUserRejection } from "@/lib/contracts/errors";
+import { TARGET_CHAIN } from "@/lib/wagmi";
 import { useToast } from "@/stores/toast";
 import { PolicyCertificate } from "./PolicyCertificate";
 import { ReleaseBlock } from "./ReleaseBlock";
@@ -27,6 +43,18 @@ interface Props {
   policyId: string;
 }
 
+const USDC_DECIMALS = 6;
+
+/** Mirrors `enum PolicyStatus { Active, Releasing, Completed, Hit, Void }`
+ *  in CoverFiPolicy.sol — the uint8 index aligns with PRD §2.2. */
+const STATUS_BY_ENUM = [
+  "active",
+  "releasing",
+  "completed",
+  "hit",
+  "void",
+] as const satisfies readonly PolicyStatus[];
+
 /** DB-fetch lifecycle for the detail screen. */
 type LoadState =
   | { kind: "loading" }
@@ -34,41 +62,60 @@ type LoadState =
   | { kind: "notFound" }
   | { kind: "ready"; policy: Policy };
 
+type Phase = "idle" | "claiming";
+
 /**
- * /policies/[policyId] — single-policy detail screen.
+ * /policies/[policyId] — single-policy detail screen, E4 edition.
  *
- * Policy data now comes from Supabase, scoped to (id, owner_address).
- * If the row doesn't exist OR belongs to a different wallet, we
- * collapse both cases to "not found" — you can only see your own
- * policies. The fetch lifecycle has four observable states:
+ * Hybrid data model:
+ *   - **Static fields** (id, principal, kBps, owner, market text) come
+ *     from Supabase via `getPolicyById(policyId, address)`.
+ *   - **Dynamic state** (status, claimed, released, claimable) comes
+ *     from the live contract via three `useReadContract` hooks against
+ *     the policy's `chain_policy_id`. The chain is the authority; the
+ *     DB row's status / claimed are only refreshed after the
+ *     corresponding write (E6 settle script for status, this page's
+ *     claim handler for claimed/status).
  *
- *   loading  → existing gated blur skeleton (hideCard)
- *   error    → centered error card with a retry button
- *   notFound → existing NotFoundView (now with policy-specific copy)
- *   ready    → certificate + status block + timeline
+ * Claim flow:
+ *   1. Pre-flight: chainId === 97, claimable > 0.
+ *   2. `coverFi.claim(chainPolicyId)` → wait receipt → parse
+ *      `PolicyClaimed` event for the actually-transferred amount.
+ *   3. Refetch all three chain reads — these give the post-claim truth.
+ *   4. `updatePolicyClaim({ chainPolicyId, claimedWei, status })` with
+ *      values from the fresh chain reads (no client-side guessing).
+ *   5. Toast.
  *
- * Claim button: persists the new `claimed` (and possibly `status =
- * 'completed'`) to Supabase first, then applies the same mutation to
- * local state so the certificate + release block + timeline reflect
- * the claim without re-fetching. Also mirrors to `store.claimPolicy`
- * so the in-memory balance + activity update for in-session-minted
- * policies (no-op for DB-only policies — balance + activity persistence
- * have no table yet).
+ * Errors:
+ *   - User rejects in wallet → silent, back to idle.
+ *   - Claim tx reverts → claim-failed modal.
+ *   - Chain succeeded but DB save failed → post-claim modal with a
+ *     retry hook that re-runs only the DB write (the chain side is
+ *     irreversible).
  *
- * If the DB write fails we surface a save-failed modal. Local state
- * is left untouched, so dismissing + clicking Claim again retries
- * cleanly.
+ * Note: NO automatic polling per Q5 — chain reads fire on mount and
+ * after each claim. A future "ticker" UX could opt-in via
+ * `query.refetchInterval: 60_000`, but the per-second accrual is
+ * invisible to humans anyway.
  */
 export function PolicyDetailPage({ policyId }: Props) {
   const t = useT();
   const { isConnected, status, address } = useAccount();
+  const chainId = useChainId();
   const mounted = useHasMounted();
-  const claimPolicyStore = useSimulationStore((s) => s.claimPolicy);
   const showToast = useToast();
+  const publicClient = usePublicClient();
+  const { writeContractAsync } = useWriteContract();
 
-  const [busy, setBusy] = useState(false);
+  const COVER_FI = getContractAddresses().coverFiPolicy;
+
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
-  const [claimErrorOpen, setClaimErrorOpen] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [wrongChainOpen, setWrongChainOpen] = useState(false);
+  const [claimFailedOpen, setClaimFailedOpen] = useState(false);
+  const [postClaimCtx, setPostClaimCtx] = useState<{ txHash: Hex } | null>(
+    null,
+  );
 
   const fetchPolicy = useCallback(async () => {
     if (!address) return;
@@ -85,14 +132,41 @@ export function PolicyDetailPage({ policyId }: Props) {
     setLoadState({ kind: "ready", policy: result.policy });
   }, [policyId, address]);
 
-  // Initial fetch + re-fetch when the wallet or route param changes.
   useEffect(() => {
     if (isConnected && address) {
       void fetchPolicy();
     }
   }, [isConnected, address, fetchPolicy]);
 
-  // Defer gate decision until wagmi settles — see InsuranceList for context.
+  // Chain reads — gated on loadState.kind so chainPolicyId is defined.
+  const chainPolicyId =
+    loadState.kind === "ready" ? loadState.policy.chainPolicyId : undefined;
+  const readsEnabled = chainPolicyId !== undefined;
+
+  const { data: chainPolicyTuple, refetch: refetchChainPolicy } =
+    useReadContract({
+      address: COVER_FI,
+      abi: coverFiPolicyAbi,
+      functionName: "policies",
+      args: chainPolicyId !== undefined ? [chainPolicyId] : undefined,
+      query: { enabled: readsEnabled },
+    });
+  const { data: releasedWei, refetch: refetchReleased } = useReadContract({
+    address: COVER_FI,
+    abi: coverFiPolicyAbi,
+    functionName: "releasedOf",
+    args: chainPolicyId !== undefined ? [chainPolicyId] : undefined,
+    query: { enabled: readsEnabled },
+  });
+  const { data: claimableWei, refetch: refetchClaimable } = useReadContract({
+    address: COVER_FI,
+    abi: coverFiPolicyAbi,
+    functionName: "claimableOf",
+    args: chainPolicyId !== undefined ? [chainPolicyId] : undefined,
+    query: { enabled: readsEnabled },
+  });
+
+  // Gate.
   if (!mounted || status === "connecting" || status === "reconnecting") {
     return <GatedView hideCard />;
   }
@@ -104,42 +178,139 @@ export function PolicyDetailPage({ policyId }: Props) {
 
   const policy = loadState.policy;
 
+  // ─── Chain-derived display values ────────────────────────────
+  const chainStatusEnum = chainPolicyTuple
+    ? Number(chainPolicyTuple[1])
+    : null;
+  const chainStatus: PolicyStatus | null =
+    chainStatusEnum !== null && chainStatusEnum >= 0 && chainStatusEnum < 5
+      ? STATUS_BY_ENUM[chainStatusEnum]
+      : null;
+  const chainClaimedWei = chainPolicyTuple
+    ? (chainPolicyTuple[8] as bigint)
+    : 0n;
+
+  // Prefer chain when loaded; fall back to DB during the brief
+  // pre-load window so the page renders SOMETHING immediately.
+  const effectiveStatus: PolicyStatus = chainStatus ?? policy.status;
+  const releasedDisplay =
+    releasedWei !== undefined
+      ? Number(formatUnits(releasedWei, USDC_DECIMALS))
+      : null;
+  const claimableDisplay =
+    claimableWei !== undefined
+      ? Number(formatUnits(claimableWei, USDC_DECIMALS))
+      : null;
+  const claimedDisplay = chainPolicyTuple
+    ? Number(formatUnits(chainClaimedWei, USDC_DECIMALS))
+    : null;
+
+  // ─── Claim handler ───────────────────────────────────────────
   const handleClaim = async () => {
-    if (busy) return;
-    if (!address) return;
-    const claimable = claimableOf(policy);
-    if (claimable <= 0) return;
+    if (phase !== "idle") return;
+    if (!address || !publicClient || chainPolicyId === undefined) return;
+    if (chainId !== BSC_TESTNET_CHAIN_ID) {
+      setWrongChainOpen(true);
+      return;
+    }
+    if (claimableWei === undefined || claimableWei === 0n) return;
 
-    // Pre-compute the post-claim state — the DB write needs the new
-    // `claimed` + `status`, and the local mirror needs the full
-    // mutated policy.
-    const mutated = applyClaimMutation(policy);
-
-    setBusy(true);
-    const result = await updatePolicyClaim({
-      id: policy.id,
-      ownerAddress: address,
-      claimed: mutated.claimed ?? 0,
-      status: mutated.status,
-    });
-    setBusy(false);
-
-    if (!result.ok) {
-      // Local state untouched — user can dismiss and retry.
-      setClaimErrorOpen(true);
+    setPhase("claiming");
+    let txHash: Hex;
+    let receipt: TransactionReceipt;
+    try {
+      txHash = await writeContractAsync({
+        address: COVER_FI,
+        abi: coverFiPolicyAbi,
+        functionName: "claim",
+        args: [chainPolicyId],
+      });
+      receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    } catch (e) {
+      setPhase("idle");
+      if (isUserRejection(e)) return; // silent
+      setClaimFailedOpen(true);
       return;
     }
 
-    setLoadState({ kind: "ready", policy: mutated });
-    // Mirror to in-memory store so the global balance + activity
-    // feed update for in-session-minted policies (no-op for DB-only
-    // policies).
-    claimPolicyStore(policyId);
-    showToast(t.claimedToast(money(claimable)), { kind: "info" });
+    // The PolicyClaimed event tells us the exact amount transferred —
+    // useful for the toast even though the value also equals
+    // claimableWei at the moment of the call.
+    const claimedEvents = parseEventLogs({
+      abi: coverFiPolicyAbi,
+      eventName: "PolicyClaimed",
+      logs: receipt.logs,
+    });
+    const transferredAmount = claimedEvents[0]?.args.amount ?? 0n;
+
+    // Refetch chain truth — these give us the post-claim claimed and
+    // status, which we then write to DB. Don't guess client-side.
+    const [freshPolicy] = await Promise.all([
+      refetchChainPolicy(),
+      refetchReleased(),
+      refetchClaimable(),
+    ]);
+
+    const freshTuple = freshPolicy.data;
+    if (!freshTuple) {
+      // RPC hiccup — show post-claim modal so the user can retry the
+      // DB update once chain reads come back.
+      setPhase("idle");
+      setPostClaimCtx({ txHash });
+      return;
+    }
+    const newClaimedWei = freshTuple[8] as bigint;
+    const newStatusEnum = Number(freshTuple[1]);
+    const newStatus = STATUS_BY_ENUM[newStatusEnum] ?? "releasing";
+
+    const dbResult = await updatePolicyClaim({
+      chainPolicyId,
+      ownerAddress: address,
+      claimedWei: newClaimedWei,
+      status: newStatus,
+    });
+
+    setPhase("idle");
+    if (!dbResult.ok) {
+      setPostClaimCtx({ txHash });
+      return;
+    }
+
+    showToast(
+      t.claimedToast(money(Number(formatUnits(transferredAmount, USDC_DECIMALS)))),
+      { kind: "info" },
+    );
+  };
+
+  // Retry only the DB write; chain claim is already settled.
+  const handlePostClaimRetry = async () => {
+    if (!postClaimCtx || !address || chainPolicyId === undefined) return;
+    setPhase("claiming");
+
+    const fresh = await refetchChainPolicy();
+    if (!fresh.data) {
+      setPhase("idle");
+      return; // leave modal open so user can retry again
+    }
+    const newClaimedWei = fresh.data[8] as bigint;
+    const newStatusEnum = Number(fresh.data[1]);
+    const newStatus = STATUS_BY_ENUM[newStatusEnum] ?? "releasing";
+
+    const dbResult = await updatePolicyClaim({
+      chainPolicyId,
+      ownerAddress: address,
+      claimedWei: newClaimedWei,
+      status: newStatus,
+    });
+
+    setPhase("idle");
+    if (dbResult.ok) {
+      setPostClaimCtx(null);
+    }
   };
 
   const showReleaseBlock =
-    policy.status === "releasing" || policy.status === "completed";
+    effectiveStatus === "releasing" || effectiveStatus === "completed";
 
   return (
     <>
@@ -155,7 +326,15 @@ export function PolicyDetailPage({ policyId }: Props) {
           <div>
             <PolicyCertificate policy={policy} />
             {showReleaseBlock ? (
-              <ReleaseBlock policy={policy} onClaim={handleClaim} busy={busy} />
+              <ReleaseBlock
+                policy={policy}
+                releasedOverride={releasedDisplay}
+                claimableOverride={claimableDisplay}
+                claimedOverride={claimedDisplay}
+                statusOverride={effectiveStatus}
+                onClaim={handleClaim}
+                busy={phase === "claiming"}
+              />
             ) : (
               <StatusBlock policy={policy} />
             )}
@@ -166,8 +345,8 @@ export function PolicyDetailPage({ policyId }: Props) {
         </div>
       </div>
 
-      {/* Non-dismissible spinner while the DB write is in flight. */}
-      {busy && (
+      {/* Non-dismissible spinner while the claim tx is in flight. */}
+      {phase === "claiming" && (
         <div
           className="overlay"
           role="dialog"
@@ -184,19 +363,65 @@ export function PolicyDetailPage({ policyId }: Props) {
         </div>
       )}
 
-      {/* DB write failed. Local state was left at the pre-claim
-          policy, so dismissing + clicking Claim again retries. */}
+      {/* Wrong network. */}
       <Modal
-        open={claimErrorOpen}
-        onClose={() => setClaimErrorOpen(false)}
-        title={t.errClaimSaveTitle}
+        open={wrongChainOpen}
+        onClose={() => setWrongChainOpen(false)}
+        title={t.errWrongChainTitle}
       >
-        <div className="errbox">{t.errClaimSaveMsg}</div>
+        <div className="errbox">{t.errWrongChainMsg(TARGET_CHAIN.name)}</div>
         <Button
           variant="ghost"
           block
           className="mt-3"
-          onClick={() => setClaimErrorOpen(false)}
+          onClick={() => setWrongChainOpen(false)}
+        >
+          {t.dismiss}
+        </Button>
+      </Modal>
+
+      {/* claim() tx failed (non-rejection). */}
+      <Modal
+        open={claimFailedOpen}
+        onClose={() => setClaimFailedOpen(false)}
+        title={t.errClaimTxTitle}
+      >
+        <div className="errbox">{t.errClaimTxMsg}</div>
+        <Button
+          variant="ghost"
+          block
+          className="mt-3"
+          onClick={() => setClaimFailedOpen(false)}
+        >
+          {t.dismiss}
+        </Button>
+      </Modal>
+
+      {/* Post-claim DB save failed — chain claim is final, USDC
+          already arrived. Retry re-runs the DB write only. */}
+      <Modal
+        open={postClaimCtx !== null && phase === "idle"}
+        onClose={() => setPostClaimCtx(null)}
+        title={t.errClaimSaveTitle}
+      >
+        <div className="errbox">
+          {t.errClaimSaveMsg(
+            postClaimCtx?.txHash ? shortAddress(postClaimCtx.txHash) : "—",
+          )}
+        </div>
+        <Button
+          variant="primary"
+          block
+          className="mt-3"
+          onClick={handlePostClaimRetry}
+        >
+          {t.retryRecord}
+        </Button>
+        <Button
+          variant="ghost"
+          block
+          className="mt-2"
+          onClick={() => setPostClaimCtx(null)}
         >
           {t.dismiss}
         </Button>

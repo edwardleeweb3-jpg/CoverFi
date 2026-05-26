@@ -6,15 +6,11 @@ import { useAccount } from "wagmi";
 import { useHasMounted } from "@/hooks/useHasMounted";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { Modal } from "@/components/ui/Modal";
-import { Spinner } from "@/components/ui/Spinner";
 import { useLocale, useT } from "@/hooks/useT";
-import { listPoliciesByOwner, updatePolicyClaim } from "@/lib/db/policies";
-import type { Policy, PolicyStatus } from "@/lib/mock";
-import { bucketOf, claimableOf, releasedOf } from "@/lib/pricing";
-import { money } from "@/lib/format";
+import { listPoliciesByOwner } from "@/lib/db/policies";
+import type { Policy } from "@/lib/mock";
+import { bucketOf } from "@/lib/pricing";
 import { useSimulationStore } from "@/stores/simulation";
-import { useToast } from "@/stores/toast";
 import { PolicyOverview } from "./PolicyOverview";
 import { PolicyFilterBar, type FilterKey } from "./PolicyFilterBar";
 import { PolicyLedger } from "./PolicyLedger";
@@ -30,31 +26,32 @@ type LoadState =
 /**
  * /policies — "My Policies" overview.
  *
- * Policies are now fetched from Supabase, scoped to the connected
- * wallet (PRD §5.2). The fetch lifecycle has three observable states:
+ * Policies are fetched from Supabase, scoped to the connected wallet
+ * (PRD §5.2). Three observable states:
  *
  *   loading → existing GatedView blur skeleton (hideCard variant)
  *   error   → centered error card with a retry button
  *   ready   → real UI; if `policies.length === 0` we show the
- *             "no policies yet" empty state (PRD A-plan: a fresh
- *             wallet starts empty — seed policies no longer surface)
+ *             "no policies yet" empty state.
  *
- * Activity feed and the in-memory balance/counter still come from
- * `useSimulationStore` — out of scope for this step (DB persistence
- * for those lands in later steps).
+ * Status / claimed values come from the DB and are kept in sync by:
+ *   - the on-chain mint flow (insertPolicy at E3 review-page);
+ *   - the settler script (settle.ts at E6, writes status + settled_at);
+ *   - the per-policy claim flow (E4 detail page → updatePolicyClaim
+ *     after the chain claim() tx confirms).
  *
- * Claim All flow: persists per-policy claims to Supabase first
- * (parallel UPDATEs, scoped to id + owner_address), then applies the
- * same mutation to local state so the overview + ledger reflect the
- * change without a re-fetch. We also still call `store.claimAll()`
- * so the in-memory balance + activity update for any policies that
- * were also minted this session (the store's policies slice is a
- * no-op for DB-only rows — its purpose here is balance + activity
- * side-effects, which live entirely in-memory until later steps).
+ * Batch "Claim All" is INTENTIONALLY disabled at E4: the CoverFiPolicy
+ * contract has no batch-claim method, so firing it would mean N
+ * sequential wallet signatures (N = claimable count). PolicyOverview
+ * replaces the button with a hint pointing users to per-policy claim
+ * on the detail page. A future contract upgrade (multicall, or a
+ * `claimMultiple(uint256[])` method) would unblock this.
  *
- * If any per-policy write fails we surface a save-failed modal and
- * re-fetch from the DB to reconcile — successful partial writes are
- * already persisted, so the truth comes from the next read.
+ * Activity feed still reads the in-memory store (Segment 4 / Phase E
+ * scope cap — activities table from PRD §5.3 lives in a later
+ * indexer step). The feed will look empty for a fresh wallet, which
+ * is fine post-E3 (the chain truth is in events; the indexer is
+ * deferred work).
  */
 export function PoliciesPage() {
   const t = useT();
@@ -63,14 +60,10 @@ export function PoliciesPage() {
   const mounted = useHasMounted();
 
   const activities = useSimulationStore((s) => s.activities);
-  const claimAllStore = useSimulationStore((s) => s.claimAll);
-  const showToast = useToast();
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
-  const [batching, setBatching] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
-  const [claimErrorOpen, setClaimErrorOpen] = useState(false);
 
   const fetchPolicies = useCallback(async () => {
     if (!address) return;
@@ -83,30 +76,20 @@ export function PoliciesPage() {
     }
   }, [address]);
 
-  // Trigger initial fetch (and re-fetch when the connected wallet
-  // changes). We only fire once we know wagmi is connected — gate
-  // checks live below and would otherwise let through a fetch with
-  // an undefined address.
   useEffect(() => {
     if (isConnected && address) {
       void fetchPolicies();
     }
   }, [isConnected, address, fetchPolicies]);
 
-  // Gate logic stays the same — wagmi-reconnecting and not-connected
-  // are handled before any data is read.
   if (!mounted || status === "connecting" || status === "reconnecting") {
     return <GatedView hideCard />;
   }
   if (!isConnected) return <GatedView />;
 
-  // While the DB fetch is in flight, reuse the gated-blur skeleton —
-  // visually it's the same dashboard frame the page will inhabit
-  // once data lands, so the transition is continuous.
   if (loadState.kind === "loading") {
     return <GatedView hideCard />;
   }
-
   if (loadState.kind === "error") {
     return <LoadErrorView onRetry={fetchPolicies} />;
   }
@@ -116,153 +99,50 @@ export function PoliciesPage() {
   const hasAny = policies.length > 0;
   const hasFilter = search.trim().length > 0 || filter !== "all";
 
-  const handleBatchClaim = async () => {
-    if (batching) return;
-    if (!address) return;
-
-    // Snapshot what's claimable right now — same filter the store
-    // uses, but applied to our locally-fetched array.
-    const claimable = policies.filter((p) => claimableOf(p) > 0);
-    if (claimable.length === 0) return;
-
-    // Pre-compute each row's post-claim state so we can write it to
-    // the DB AND apply it locally without re-deriving twice.
-    const mutated = claimable.map((p) => ({
-      before: p,
-      after: applyClaimMutation(p),
-    }));
-    const total = claimable.reduce((s, p) => s + claimableOf(p), 0);
-
-    setBatching(true);
-    const writeResults = await Promise.all(
-      mutated.map(({ after }) =>
-        updatePolicyClaim({
-          id: after.id,
-          ownerAddress: address,
-          claimed: after.claimed ?? 0,
-          status: after.status,
-        }),
-      ),
-    );
-    setBatching(false);
-
-    const allOk = writeResults.every((r) => r.ok);
-    if (!allOk) {
-      // Some writes may have landed and others may not — re-fetch
-      // so the page reflects whatever the DB now holds, then surface
-      // the error.
-      setClaimErrorOpen(true);
-      void fetchPolicies();
-      return;
-    }
-
-    // Apply the same lifecycle transition the store does (claimed →
-    // released; status flips to `completed` when within epsilon of
-    // full release) — DB has already accepted these values, so this
-    // is just the local mirror.
-    setLoadState({
-      kind: "ready",
-      policies: policies.map((p) => applyClaimMutation(p)),
-    });
-
-    // Mirror to in-memory store so balance + activity update for
-    // any policies that were also minted this session. For DB-only
-    // policies the store call is a no-op.
-    claimAllStore();
-
-    showToast(t.claimedBatch(money(total)), {
-      kind: "info",
-      sub: t.batchDone(claimable.length),
-    });
-  };
-
   return (
-    <>
-      <div className="page wrap">
-        <div className="page-head rise">
-          <div className="pagetitle">{t.pfTitle}</div>
-          <p className="pagesub">{t.pfSub}</p>
-        </div>
+    <div className="page wrap">
+      <div className="page-head rise">
+        <div className="pagetitle">{t.pfTitle}</div>
+        <p className="pagesub">{t.pfSub}</p>
+      </div>
 
-        <div className="rise-2" style={{ marginBottom: 28 }}>
-          <PolicyOverview
-            policies={policies}
-            onClaimAll={handleBatchClaim}
-            busy={batching}
-          />
-        </div>
+      <div className="rise-2" style={{ marginBottom: 28 }}>
+        <PolicyOverview policies={policies} batchHint={t.claimAllPerDetail} />
+      </div>
 
-        <div className="rise-2">
-          {hasAny ? (
-            <>
-              <PolicyFilterBar
-                search={search}
-                filter={filter}
-                onSearch={setSearch}
-                onFilter={setFilter}
-              />
-              {matched.length === 0 ? (
-                hasFilter ? (
-                  <NoMatch
-                    onClear={() => {
-                      setSearch("");
-                      setFilter("all");
-                    }}
-                  />
-                ) : null
-              ) : (
-                <PolicyLedger policies={matched} />
-              )}
-            </>
-          ) : (
-            <NoPoliciesYet />
-          )}
-        </div>
-
-        {activities.length > 0 && (
-          <div className="rise-3" style={{ marginTop: 8 }}>
-            <ActivityFeed activities={activities} />
-          </div>
+      <div className="rise-2">
+        {hasAny ? (
+          <>
+            <PolicyFilterBar
+              search={search}
+              filter={filter}
+              onSearch={setSearch}
+              onFilter={setFilter}
+            />
+            {matched.length === 0 ? (
+              hasFilter ? (
+                <NoMatch
+                  onClear={() => {
+                    setSearch("");
+                    setFilter("all");
+                  }}
+                />
+              ) : null
+            ) : (
+              <PolicyLedger policies={matched} />
+            )}
+          </>
+        ) : (
+          <NoPoliciesYet />
         )}
       </div>
 
-      {/* Non-dismissible busy overlay while the parallel DB writes run. */}
-      {batching && (
-        <div
-          className="overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-live="polite"
-        >
-          <div className="modal">
-            <div className="modal-status">
-              <Spinner />
-              <h3>{t.batchT}</h3>
-              <p>{t.batchSub}</p>
-            </div>
-          </div>
+      {activities.length > 0 && (
+        <div className="rise-3" style={{ marginTop: 8 }}>
+          <ActivityFeed activities={activities} />
         </div>
       )}
-
-      {/* DB persistence for the batch claim failed (network /
-          unexpected). The page has already re-fetched to reconcile;
-          dismiss + retry by clicking Claim All again. */}
-      <Modal
-        open={claimErrorOpen}
-        onClose={() => setClaimErrorOpen(false)}
-        title={t.errClaimSaveTitle}
-      >
-        <div className="errbox">{t.errClaimSaveMsg}</div>
-        <Button
-          variant="ghost"
-          block
-          className="mt-3"
-          onClick={() => setClaimErrorOpen(false)}
-        >
-          {t.dismiss}
-        </Button>
-      </Modal>
-    </>
+    </div>
   );
 }
 
@@ -283,20 +163,6 @@ function applyFilter(
     if (filter !== "all" && bucketOf(p) !== filter) return false;
     return true;
   });
-}
-
-/**
- * Mirror of `store.claimPolicy`'s lifecycle mutation, applied
- * locally so the overview + ledger update without a DB round-trip.
- * No-op for policies with nothing claimable right now.
- */
-export function applyClaimMutation(p: Policy): Policy {
-  const claimable = claimableOf(p);
-  if (claimable <= 0) return p;
-  const released = releasedOf(p);
-  const fullyClaimed = released >= p.a - 0.01;
-  const newStatus: PolicyStatus = fullyClaimed ? "completed" : p.status;
-  return { ...p, claimed: released, status: newStatus };
 }
 
 function NoMatch({ onClear }: { onClear: () => void }) {

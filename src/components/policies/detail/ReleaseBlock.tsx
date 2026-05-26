@@ -6,13 +6,26 @@ import { useT } from "@/hooks/useT";
 import { claimableOf, releasedOf } from "@/lib/pricing";
 import { RELEASE_DAYS } from "@/lib/config";
 import { money } from "@/lib/format";
-import type { Policy } from "@/lib/mock";
+import type { Policy, PolicyStatus } from "@/lib/mock";
 import { ReleaseCurve } from "./ReleaseCurve";
 
 interface Props {
   policy: Policy;
   onClaim: () => void;
   busy: boolean;
+  /**
+   * Optional chain-sourced overrides — when provided, displace the
+   * pricing-helper-derived values. Used by the detail page (E4) to
+   * surface live `releasedOf` / `claimableOf` / `policies(id).claimed`
+   * / `policies(id).status` from the contract, which are the
+   * authoritative time-derived figures the DB can't track. `null`
+   * means "chain read hasn't loaded yet" — fall back to the local
+   * computation so the page renders something immediately.
+   */
+  releasedOverride?: number | null;
+  claimableOverride?: number | null;
+  claimedOverride?: number | null;
+  statusOverride?: PolicyStatus;
 }
 
 /**
@@ -27,12 +40,30 @@ interface Props {
  *   5. "X of Y USDC released · Z%" mono line.
  *   6. Claim button (releasing) OR "Fully reimbursed" note (completed).
  */
-export function ReleaseBlock({ policy, onClaim, busy }: Props) {
+export function ReleaseBlock({
+  policy,
+  onClaim,
+  busy,
+  releasedOverride,
+  claimableOverride,
+  claimedOverride,
+  statusOverride,
+}: Props) {
   const t = useT();
-  const good = policy.status === "completed";
-  const released = releasedOf(policy);
-  const claimable = claimableOf(policy);
-  const claimed = policy.claimed ?? 0;
+  const status = statusOverride ?? policy.status;
+  const good = status === "completed";
+  const released =
+    releasedOverride !== undefined && releasedOverride !== null
+      ? releasedOverride
+      : releasedOf(policy);
+  const claimable =
+    claimableOverride !== undefined && claimableOverride !== null
+      ? claimableOverride
+      : claimableOf(policy);
+  const claimed =
+    claimedOverride !== undefined && claimedOverride !== null
+      ? claimedOverride
+      : (policy.claimed ?? 0);
   const cap = Math.min(policy.settledDaysAgo ?? 0, RELEASE_DAYS);
   const pctRaw = (released / policy.a) * 100;
   const pctTxt = pctRaw.toFixed(1);

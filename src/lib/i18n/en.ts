@@ -259,9 +259,14 @@ export const en = {
   errLoadTitle: "Couldn't load",
   errLoadMsg:
     "There was a problem loading this from the database. Check your connection and try again.",
-  errClaimSaveTitle: "Couldn't save your claim",
-  errClaimSaveMsg:
-    "Something went wrong saving your claim to the database. Please try again.",
+  errClaimSaveTitle: "Claim succeeded — record save failed",
+  errClaimSaveMsg: (txHash: string) =>
+    `Your claim went through on-chain and USDC has already arrived in your wallet (tx ${txHash}). Only the off-chain record save failed. Click retry to save it.`,
+  errClaimTxTitle: "Claim failed",
+  errClaimTxMsg:
+    "The claim transaction didn't go through. No USDC was moved. Try again, or check your wallet for the failed tx.",
+  claimAllPerDetail:
+    "Open each policy from the ledger below to claim individually",
   retryBtn: "Try again",
   notFoundPolicyT: "Policy not found",
   notFoundPolicyD:
