@@ -8,21 +8,22 @@ import { network } from "hardhat";
  * MockUSDC sanity coverage — decimals, mint, faucet semantics,
  * transfer. Real ERC20 invariants (zero-address checks, allowance
  * mechanics, etc.) come from OpenZeppelin and are covered upstream;
- * these tests only assert the things that are *ours*: the 6-decimal
- * override and the permissionless mint.
+ * these tests only assert the things that are *ours*: the 18-decimal
+ * override (Segment 5 aligns with Signa Pulse beta tUSDC) and the
+ * permissionless mint.
  */
 describe("MockUSDC", async function () {
   const { viem } = await network.create();
   const [, alice, bob] = await viem.getWalletClients();
 
-  it("uses 6 decimals to match real USDC", async function () {
+  it("uses 18 decimals to match Signa Pulse beta tUSDC", async function () {
     const usdc = await viem.deployContract("MockUSDC");
-    assert.equal(await usdc.read.decimals(), 6);
+    assert.equal(await usdc.read.decimals(), 18);
   });
 
   it("mint() credits the target address and bumps totalSupply", async function () {
     const usdc = await viem.deployContract("MockUSDC");
-    const amount = parseUnits("1000", 6); // 1,000 USDC in wei
+    const amount = parseUnits("1000", 18); // 1,000 USDC in wei
 
     await usdc.write.mint([alice.account.address, amount]);
 
@@ -32,7 +33,7 @@ describe("MockUSDC", async function () {
 
   it("mint() is permissionless — any wallet can faucet anyone", async function () {
     const usdc = await viem.deployContract("MockUSDC");
-    const amount = parseUnits("500", 6);
+    const amount = parseUnits("500", 18);
 
     // Bob (not the deployer) mints to Alice. The whole point of the
     // testnet faucet is no auth — this should succeed.
@@ -46,8 +47,8 @@ describe("MockUSDC", async function () {
 
   it("transfer() moves balance from sender to recipient", async function () {
     const usdc = await viem.deployContract("MockUSDC");
-    const minted = parseUnits("100", 6);
-    const sent = parseUnits("30", 6);
+    const minted = parseUnits("100", 18);
+    const sent = parseUnits("30", 18);
 
     await usdc.write.mint([alice.account.address, minted]);
 
