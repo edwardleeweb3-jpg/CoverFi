@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IPulseMarket} from "./signa/IPulseMarket.sol";
+import {IPulseMarket, VOID_SENTINEL} from "./signa/IPulseMarket.sol";
 import {IPulseFactoryRegistry} from "./signa/IPulseFactoryRegistry.sol";
 
 /// @title CoverFiPolicy
@@ -196,14 +196,36 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
         uint256 existingPolicyId
     );
 
-    /// @notice Thrown when `triggerSettlement` is called with a
-    ///         policyId that was never minted (owner == address(0)).
+    /// @notice Thrown by `settleByOnChainRead` when the Signa market
+    ///         hasn't reached `Finalized` yet. CoverFi only acts on
+    ///         terminal Signa state — intermediate states (Settling /
+    ///         Settled / Disputing / Disputed / Arbitrating) are still
+    ///         in motion and could flip; we refuse to settle until the
+    ///         market is provably terminal.
+    error MarketNotFinalized(address market, uint8 actualStatus);
+
+    /// @notice Thrown by `settleByOnChainRead` when the Signa market
+    ///         reports `Finalized` but a `finalOption` that is neither
+    ///         `VOID_SENTINEL` nor a non-negative option index (i.e.
+    ///         some int8 in [-127, -1]). Per Signa's spec this can't
+    ///         happen — Finalized markets carry only valid option
+    ///         indices or the void sentinel. If it does, Signa's
+    ///         oracle is self-contradictory; the right reaction is
+    ///         to stop and not pay out (don't silently misread as
+    ///         Miss). The policy stays Active and falls under
+    ///         CLAUDE.md §9's "Signa stuck" pre-mainnet emergency-
+    ///         settle path.
+    error MarketAnomalousOutcome(address market, int8 finalOption);
+
+    /// @notice Thrown when `triggerSettlement` / `settleByOnChainRead`
+    ///         / `claim` is called with a policyId that was never
+    ///         minted (owner == address(0)).
     error PolicyNotFound(uint256 policyId);
 
-    /// @notice Thrown when `triggerSettlement` is called on a policy
-    ///         that has already left the Active state. The current
-    ///         status is included so the settler can diagnose without
-    ///         a second RPC call.
+    /// @notice Thrown when `triggerSettlement` or `settleByOnChainRead`
+    ///         is called on a policy that has already left the Active
+    ///         state. The current status is included so the caller
+    ///         can diagnose without a second RPC.
     error PolicyNotActive(uint256 policyId, PolicyStatus currentStatus);
 
     /// @notice Thrown when `claim` is called by an address other than
@@ -263,6 +285,21 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
         uint256 indexed policyId,
         address indexed owner,
         uint256 amount
+    );
+
+    /// @notice Emitted by `settleByOnChainRead`'s Miss branch when
+    ///         the buyer's current Signa position is smaller than the
+    ///         insured principal at mint time. The cap value
+    ///         (`cappedPrincipal = userBets at settle time`) becomes
+    ///         the new `Policy.principal` and the release / claim
+    ///         basis. Under Signa's no-shrink guarantee this never
+    ///         fires; emission marks the guarantee as violated for
+    ///         that policy (Signa allowed a partial cancel or some
+    ///         other edge), and we paid the cost of catching it.
+    event PolicyPrincipalCapped(
+        uint256 indexed policyId,
+        uint256 originalPrincipal,
+        uint256 cappedPrincipal
     );
 
     /// @notice Emitted on every Q change, including the bootstrap value
@@ -574,6 +611,111 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
 
             // ─ INTERACTIONS (Void only) ─
             usdc.safeTransfer(owner_, refund);
+        }
+    }
+
+    // ─── Public: settleByOnChainRead ─────────────────────────────
+
+    /// @notice Settle a policy by directly reading the linked Signa
+    ///         market's terminal state. Permissionless — anyone can
+    ///         call. The outcome is deterministic from chain state,
+    ///         so the caller has no influence over the result;
+    ///         griefing amounts to paying gas to advance someone
+    ///         else's policy.
+    ///
+    ///         Replaces v1's trust-the-settler model: 5B.4 deletes
+    ///         `SETTLER_ROLE` + `triggerSettlement` entirely, leaving
+    ///         this as the only settlement entrypoint.
+    ///
+    ///         Exhaustive four-branch dispatch on
+    ///         `market.finalOption()`:
+    ///           1. fin == VOID_SENTINEL                        → Void
+    ///           2. fin >= 0 && uint8(fin) == claimOption       → Hit
+    ///           3. fin >= 0                                    → Miss
+    ///           4. else  (fin < 0 and fin != VOID_SENTINEL)    → revert
+    ///                                                            MarketAnomalousOutcome
+    ///
+    ///         Branch 4 is reachable only if Signa returns a negative
+    ///         `finalOption` other than `VOID_SENTINEL`. Per Signa's
+    ///         spec it can't happen; if it does, the oracle is
+    ///         self-contradictory and the correct reaction is to stop
+    ///         and not pay out (rather than silently misreading as
+    ///         Miss and over-paying). The §9 "Signa stuck" pre-
+    ///         mainnet emergency-settle entrypoint is what would
+    ///         unstick a policy in this state.
+    ///
+    ///         Miss-branch min-cap (D1 follow-up): if the buyer's
+    ///         current chain position (`userBets(p.owner, claimOption)`)
+    ///         is smaller than the insured `principal` from mint time,
+    ///         `p.principal` is shrunk to the live value and
+    ///         `PolicyPrincipalCapped` is emitted. Under Signa's
+    ///         no-shrink guarantee this never fires; it's the
+    ///         verification step that turns the assumption into a
+    ///         hard guarantee.
+    ///
+    ///         CEI: in the Void branch the status flip + both events
+    ///         happen before `safeTransfer`. The Signa reads are
+    ///         STATICCALL views — no reentry path. Branches 2 and 3
+    ///         don't transfer.
+    ///
+    /// @param policyId  Id from a prior `buyPolicy`.
+    function settleByOnChainRead(uint256 policyId) external {
+        Policy storage p = policies[policyId];
+
+        // ─ CHECKS ─
+        if (p.owner == address(0)) revert PolicyNotFound(policyId);
+        if (p.status != PolicyStatus.Active) {
+            revert PolicyNotActive(policyId, p.status);
+        }
+
+        IPulseMarket market = IPulseMarket(p.signaMarket);
+        IPulseMarket.Status mStatus = market.status();
+        if (mStatus != IPulseMarket.Status.Finalized) {
+            revert MarketNotFinalized(p.signaMarket, uint8(mStatus));
+        }
+
+        int8 fin = market.finalOption();
+        uint8 claimOption_ = p.claimOption;
+
+        // ─ EFFECTS ─
+        uint32 settledAt = uint32(block.timestamp);
+        p.settledAt = settledAt;
+
+        if (fin == VOID_SENTINEL) {
+            // Branch 1: Void — refund the original premium.
+            p.status = PolicyStatus.Void;
+            address owner_ = p.owner;
+            uint256 refund = p.premium;
+            emit PolicySettled(policyId, SettlementOutcome.Void, settledAt);
+            emit PolicyRefunded(policyId, owner_, refund);
+            // ─ INTERACTIONS (Void only) ─
+            usdc.safeTransfer(owner_, refund);
+        } else if (fin >= 0 && uint8(fin) == claimOption_) {
+            // Branch 2: Hit — buyer's option won; premium retained.
+            p.status = PolicyStatus.Hit;
+            emit PolicySettled(policyId, SettlementOutcome.Hit, settledAt);
+        } else if (fin >= 0) {
+            // Branch 3: Miss — apply min-cap then transition to
+            // Releasing. (fin >= 0 here AND fin != claimOption_ by
+            // elimination from branch 2.)
+            uint256 freshUserBets = market.userBets(p.owner, claimOption_);
+            if (freshUserBets < p.principal) {
+                uint256 oldPrincipal = p.principal;
+                p.principal = freshUserBets;
+                emit PolicyPrincipalCapped(
+                    policyId,
+                    oldPrincipal,
+                    freshUserBets
+                );
+            }
+            p.status = PolicyStatus.Releasing;
+            emit PolicySettled(policyId, SettlementOutcome.Miss, settledAt);
+        } else {
+            // Branch 4: anomalous — fin < 0 and fin != VOID_SENTINEL.
+            // Signa promised no such state on Finalized markets;
+            // refuse to pay out. The settledAt write above is rolled
+            // back by the revert (Solidity tx-atomic).
+            revert MarketAnomalousOutcome(p.signaMarket, fin);
         }
     }
 
