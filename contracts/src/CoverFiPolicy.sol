@@ -45,9 +45,9 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
         Void
     }
 
-    /// @notice Outcome arg for triggerSettlement (Phase B4). `Miss` is
-    ///         the only outcome that moves a policy into payout; `Hit`
-    ///         and `Void` are terminal.
+    /// @notice Outcome label for the `PolicySettled` event emitted by
+    ///         `settleByOnChainRead`. `Miss` is the only outcome that
+    ///         moves a policy into payout; `Hit` and `Void` are terminal.
     enum SettlementOutcome {
         Miss,
         Hit,
@@ -65,8 +65,8 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     /// `uint32` timestamps cap at 2106-02-07 — far enough for any
     /// horizon this v1 testnet contract will ever see.
     /// `signaMarket` + `claimOption` are the on-chain handle for the
-    /// position this policy insures; `triggerSettlement` /
-    /// `settleByOnChainRead` (Segment 5) read live state from them.
+    /// position this policy insures; `settleByOnChainRead` reads live
+    /// state from them.
     struct Policy {
         address owner;
         PolicyStatus status;
@@ -81,13 +81,6 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     }
 
     // ─── Roles ───────────────────────────────────────────────────
-
-    /// @notice Authority that may move a policy out of `Active` via
-    ///         `triggerSettlement` (Phase B4). Held by a project-owned
-    ///         EOA in v1 testnet; migrates to a Signa adapter contract
-    ///         in Segment 5 by `grantRole(SETTLER_ROLE, adapter)` +
-    ///         `revokeRole(SETTLER_ROLE, oldEOA)` — no contract change.
-    bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
 
     /// @notice Placeholder for the future signed-quote model (see plan
     ///         "已知边界 #1"). v1 trusts the caller's kBps; a pre-
@@ -217,15 +210,15 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///         settle path.
     error MarketAnomalousOutcome(address market, int8 finalOption);
 
-    /// @notice Thrown when `triggerSettlement` / `settleByOnChainRead`
-    ///         / `claim` is called with a policyId that was never
-    ///         minted (owner == address(0)).
+    /// @notice Thrown when `settleByOnChainRead` or `claim` is called
+    ///         with a policyId that was never minted (owner ==
+    ///         address(0)).
     error PolicyNotFound(uint256 policyId);
 
-    /// @notice Thrown when `triggerSettlement` or `settleByOnChainRead`
-    ///         is called on a policy that has already left the Active
-    ///         state. The current status is included so the caller
-    ///         can diagnose without a second RPC.
+    /// @notice Thrown when `settleByOnChainRead` is called on a
+    ///         policy that has already left the Active state. The
+    ///         current status is included so the caller can diagnose
+    ///         without a second RPC.
     error PolicyNotActive(uint256 policyId, PolicyStatus currentStatus);
 
     /// @notice Thrown when `claim` is called by an address other than
@@ -260,8 +253,8 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
         uint256 premium
     );
 
-    /// @notice Emitted when `triggerSettlement` (Phase B4) moves a
-    ///         policy out of Active into releasing / hit / void.
+    /// @notice Emitted when `settleByOnChainRead` moves a policy out
+    ///         of Active into releasing / hit / void.
     event PolicySettled(
         uint256 indexed policyId,
         SettlementOutcome outcome,
@@ -326,10 +319,6 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     /// @param _admin         Account that receives DEFAULT_ADMIN_ROLE
     ///                       (may call `setQ`, grant/revoke other roles,
     ///                       `rescueToken`).
-    /// @param _settler       Account that receives SETTLER_ROLE (calls
-    ///                       `triggerSettlement`). Retained through
-    ///                       Segment 5 Phase 5B.3+; deleted in 5B.4
-    ///                       when `settleByOnChainRead` takes over.
     /// @param _initialQBps   Initial pricing dial in bps. Same range
     ///                       rule as `setQ` — must be > 0 and <= 10000.
     ///                       PRD recommends 5000 (= Q=0.5).
@@ -337,17 +326,15 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
         IERC20 _usdc,
         IPulseFactoryRegistry _signaFactory,
         address _admin,
-        address _settler,
         uint256 _initialQBps
     ) {
         // Zero-address checks — once these slots are baked in (usdc
-        // and signaFactory are immutable; the admin/settler role
-        // grants can be revoked but not undone retroactively) there's
-        // no clean recovery, so we refuse the deploy outright.
+        // and signaFactory are immutable; the admin role grant can
+        // be revoked but not undone retroactively) there's no clean
+        // recovery, so we refuse the deploy outright.
         if (address(_usdc) == address(0)) revert ZeroAddress();
         if (address(_signaFactory) == address(0)) revert ZeroAddress();
         if (_admin == address(0)) revert ZeroAddress();
-        if (_settler == address(0)) revert ZeroAddress();
         if (_initialQBps == 0 || _initialQBps > BPS_DENOMINATOR) {
             revert InvalidQBps(_initialQBps);
         }
@@ -357,7 +344,6 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
         nextPolicyId = 1;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(SETTLER_ROLE, _settler);
 
         emit QUpdated(0, _initialQBps, _admin);
     }
@@ -544,76 +530,6 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
         usdc.safeTransferFrom(msg.sender, address(this), premium);
     }
 
-    // ─── Settler: triggerSettlement ──────────────────────────────
-
-    /// @notice Move a policy out of the Active state per the Signa
-    ///         market result. Authority is gated by SETTLER_ROLE — in
-    ///         v1 testnet this is a project EOA; Segment 5 hands the
-    ///         role to a Signa-aware adapter contract via grant/revoke
-    ///         (the contract itself doesn't need to change for that).
-    ///
-    ///         Three outcomes (enum `SettlementOutcome` — PRD §2.2):
-    ///           Miss → policy enters `Releasing`; 365-day linear
-    ///                  release starts from `settledAt`. Payout flow
-    ///                  lives in `claim` (Phase B5).
-    ///           Hit  → policy enters terminal `Hit`; premium retained
-    ///                  by the protocol, no payout (PRD §3.4).
-    ///           Void → policy enters terminal `Void`; premium is
-    ///                  refunded to the owner in this same call
-    ///                  (PRD §3.4). Refund emits `PolicyRefunded`,
-    ///                  separate from `PolicyClaimed` so indexers can
-    ///                  route the two cash-flow types independently.
-    ///
-    ///         `settledAt = block.timestamp` is written in all three
-    ///         branches — it's the "when did the market settle"
-    ///         timestamp, useful as a record regardless of branch; the
-    ///         Releasing branch additionally uses it as the linear
-    ///         release origin.
-    ///
-    ///         Strict CEI is preserved in the Void branch: status flip
-    ///         + both events emit before the `safeTransfer`, so a
-    ///         hostile ERC20 with a transfer hook can't see this
-    ///         policy as still Active and try to settle it again.
-    ///
-    /// @param policyId  Id from a prior `buyPolicy`.
-    /// @param outcome   Miss / Hit / Void per PRD §2.2.
-    function triggerSettlement(uint256 policyId, SettlementOutcome outcome)
-        external
-        onlyRole(SETTLER_ROLE)
-    {
-        Policy storage p = policies[policyId];
-
-        // ─ CHECKS ─
-        // Policy 0 is reserved (nextPolicyId starts at 1), and a
-        // never-minted slot has owner == address(0).
-        if (p.owner == address(0)) revert PolicyNotFound(policyId);
-        if (p.status != PolicyStatus.Active) {
-            revert PolicyNotActive(policyId, p.status);
-        }
-
-        // ─ EFFECTS ─
-        uint32 settledAt = uint32(block.timestamp);
-        p.settledAt = settledAt;
-
-        if (outcome == SettlementOutcome.Miss) {
-            p.status = PolicyStatus.Releasing;
-            emit PolicySettled(policyId, outcome, settledAt);
-        } else if (outcome == SettlementOutcome.Hit) {
-            p.status = PolicyStatus.Hit;
-            emit PolicySettled(policyId, outcome, settledAt);
-        } else {
-            // Void — refund the original premium back to the owner.
-            p.status = PolicyStatus.Void;
-            address owner_ = p.owner;
-            uint256 refund = p.premium;
-            emit PolicySettled(policyId, outcome, settledAt);
-            emit PolicyRefunded(policyId, owner_, refund);
-
-            // ─ INTERACTIONS (Void only) ─
-            usdc.safeTransfer(owner_, refund);
-        }
-    }
-
     // ─── Public: settleByOnChainRead ─────────────────────────────
 
     /// @notice Settle a policy by directly reading the linked Signa
@@ -623,9 +539,9 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///         griefing amounts to paying gas to advance someone
     ///         else's policy.
     ///
-    ///         Replaces v1's trust-the-settler model: 5B.4 deletes
-    ///         `SETTLER_ROLE` + `triggerSettlement` entirely, leaving
-    ///         this as the only settlement entrypoint.
+    ///         Sole settlement entrypoint. Replaces v1's trust-the-
+    ///         settler model: `SETTLER_ROLE` + `triggerSettlement`
+    ///         were removed in Segment 5 Phase 5B.4.
     ///
     ///         Exhaustive four-branch dispatch on
     ///         `market.finalOption()`:
