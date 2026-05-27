@@ -85,9 +85,10 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     /// @notice Placeholder for the future signed-quote model (see plan
     ///         "已知边界 #1"). v1 trusts the caller's kBps; a pre-
     ///         mainnet upgrade will require this role's signature over
-    ///         (orderHash, kBps, expiry). The constant ships in the v1
-    ///         ABI so downstream code can prepare the grant ahead of
-    ///         the verification logic landing.
+    ///         the canonical position descriptor + `(kBps, expiry)`.
+    ///         The constant ships in the v1 ABI so downstream code
+    ///         can prepare the grant ahead of the verification logic
+    ///         landing.
     bytes32 public constant QUOTER_ROLE = keccak256("QUOTER_ROLE");
 
     // ─── Constants ───────────────────────────────────────────────
@@ -177,6 +178,18 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///         returned 0. Enforces D1(b): the buyer must already hold
     ///         the position they want to insure.
     error NoPositionToInsure(address market, address buyer, uint8 option);
+
+    /// @notice Thrown by `buyPolicy` when `claimOption` is not a real
+    ///         option of the market (`claimOption >= market.optionCount()`).
+    ///         Closes the 5B.6 HIGH: without this check, insuring an
+    ///         option index the market can never finalize on routes
+    ///         straight to the Miss branch at settle, paying full
+    ///         principal on a guaranteed-loser position. Covers both
+    ///         (a) `claimOption > 127` (intrinsic — `finalOption` is
+    ///         int8, can never equal a uint8 > 127) and (b)
+    ///         `claimOption` in [optionCount, 127] (Signa data-model
+    ///         out of range for this specific market).
+    error ClaimOptionOutOfRange(uint8 claimOption, uint8 optionCount);
 
     /// @notice Thrown by `buyPolicy` when the caller has already
     ///         insured the exact (market, buyer, option) position.
@@ -372,15 +385,17 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///           floor   = F × a
     ///           premium = max(base, floor)
     ///
-    /// All quantities are integers in bps × wei (USDC base units, 6
-    /// decimals on testnet — F_BPS and qBps cancel out the BPS scaling).
-    /// Multiplications happen before the divisions to keep intermediate
-    /// precision on Solidity's floor-division integer math.
+    /// All quantities are integers in bps × wei (USDC base units, 18
+    /// decimals — Segment 5 aligns with Signa Pulse beta tUSDC; F_BPS
+    /// and qBps cancel out the BPS scaling). Multiplications happen
+    /// before the divisions to keep intermediate precision on
+    /// Solidity's floor-division integer math.
     ///
     /// Overflow safety: with qBps ≤ 10_000 and kBps ≤ 10_000 (both
     /// enforced), the worst-case numerator is 10_000 × 10_000 × principal
-    /// = 1e8 × principal. principal lives in USDC wei (6-decimal token);
-    /// even an absurd 1e18 principal stays well below uint256 max.
+    /// = 1e8 × principal. principal lives in USDC wei (18-decimal token);
+    /// even an absurd 1e30 principal stays well below uint256 max
+    /// (numerator ≈ 1e38 << uint256 max ≈ 1.16e77).
     ///
     /// Reverts:
     ///   InvalidPrincipal — principal == 0
@@ -420,15 +435,19 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///           2. Market is `Running` — only undecided markets are
     ///              insurable (D1(a)); pre-decided markets would let
     ///              the buyer arbitrage a known outcome.
-    ///           3. Caller has a position — `userBets(msg.sender,
+    ///           3. `claimOption < market.optionCount()` — closes the
+    ///              5B.6 HIGH where insuring a never-winnable option
+    ///              routes to guaranteed-Miss at settle (full payout
+    ///              on a no-risk position).
+    ///           4. Caller has a position — `userBets(msg.sender,
     ///              claimOption) > 0` (D1(b)). The returned value
     ///              becomes the insured `principal` — chain truth, no
     ///              caller-supplied number (D1(c)).
-    ///           4. Position not already insured — at most one policy
+    ///           5. Position not already insured — at most one policy
     ///              per (market, buyer, option).
-    ///           5. Premium quote — `quotePremium` validates kBps
+    ///           6. Premium quote — `quotePremium` validates kBps
     ///              range; `principal > 0` is already guaranteed by
-    ///              step 3.
+    ///              step 4.
     ///
     ///         v1 trust model: caller-supplied `kBps` is still accepted
     ///         at face value pending the QUOTER_ROLE signed-quote model
@@ -469,7 +488,36 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
             revert MarketNotRunning(signaMarket, uint8(currentStatus));
         }
 
-        // 3. Buyer must have a real position — and that position IS
+        // 3. claimOption must be a real option of this market AND
+        //    within the int8 ceiling that `finalOption` can return.
+        //    Two clauses for two distinct guarantees:
+        //      (a) `claimOption >= nOptions` blocks options the
+        //          market itself doesn't expose. Defense doesn't
+        //          depend on Signa's placeBet doing its own bounds
+        //          check.
+        //      (b) `claimOption > 127` is the int8-ceiling belt-
+        //          and-braces. It's redundant ONLY if Signa's
+        //          createMarket enforces optionCount ≤ 128, which
+        //          we don't verify; any malformed market with
+        //          optionCount > 128 would otherwise let
+        //          claimOption in [128, optionCount-1] slip past
+        //          clause (a), and `settleByOnChainRead` would then
+        //          route to guaranteed-Miss (`finalOption` is int8,
+        //          can never equal a uint8 > 127). One cheap OR
+        //          closes both subsets without trusting Signa's
+        //          option-count enforcement.
+        //    Reading optionCount AFTER the factory bijection
+        //    guarantees we're calling into a registered Signa
+        //    market, not arbitrary code.
+        uint8 nOptions = IPulseMarket(signaMarket).optionCount();
+        if (
+            claimOption >= nOptions ||
+            claimOption > uint8(type(int8).max)
+        ) {
+            revert ClaimOptionOutOfRange(claimOption, nOptions);
+        }
+
+        // 4. Buyer must have a real position — and that position IS
         //    the insured principal. No caller-supplied principal.
         uint256 principal = IPulseMarket(signaMarket).userBets(
             msg.sender,
@@ -479,7 +527,7 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
             revert NoPositionToInsure(signaMarket, msg.sender, claimOption);
         }
 
-        // 4. One policy per (market, buyer, option).
+        // 5. One policy per (market, buyer, option).
         uint256 existing =
             policyIdByPosition[signaMarket][msg.sender][claimOption];
         if (existing != 0) {
@@ -491,8 +539,8 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
             );
         }
 
-        // 5. quotePremium validates kBps ≤ BPS_DENOMINATOR; principal
-        //    > 0 is already guaranteed by step 3.
+        // 6. quotePremium validates kBps ≤ BPS_DENOMINATOR; principal
+        //    > 0 is already guaranteed by step 4.
         (, , uint256 premium) = quotePremium(principal, kBps);
 
         // ─ EFFECTS ─

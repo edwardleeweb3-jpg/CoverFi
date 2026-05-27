@@ -15,6 +15,7 @@ contract MockPulseMarket is IPulseMarket {
     int8 private _finalOption;
     mapping(address => mapping(uint8 => uint256)) private _userBets;
     mapping(address => bool) private _hasBet;
+    uint8 private _optionCount;
 
     function status() external view override returns (IPulseMarket.Status) {
         return _status;
@@ -35,6 +36,10 @@ contract MockPulseMarket is IPulseMarket {
 
     function hasBet(address user) external view override returns (bool) {
         return _hasBet[user];
+    }
+
+    function optionCount() external view override returns (uint8) {
+        return _optionCount;
     }
 
     /// @notice Drive the market to any lifecycle state.
@@ -63,5 +68,14 @@ contract MockPulseMarket is IPulseMarket {
     ///         tests don't need it accurate by default).
     function setHasBet(address user, bool v) external {
         _hasBet[user] = v;
+    }
+
+    /// @notice Set the market's option count. CoverFi's buyPolicy
+    ///         rejects `claimOption >= optionCount`, so unless a test
+    ///         explicitly wants to exercise that revert, this should
+    ///         be set to at least `max(claimOption) + 1` for any bet
+    ///         the test plans to insure.
+    function setOptionCount(uint8 n) external {
+        _optionCount = n;
     }
 }

@@ -62,8 +62,12 @@ describe("CoverFiPolicy", async function () {
 
   /**
    * Deploy + register a fresh MockPulseMarket, optionally setting
-   * initial status / finalOption / per-user bets. Returns the market
-   * contract.
+   * initial status / finalOption / per-user bets / optionCount.
+   *
+   * `optionCount` defaults to `max(2, highest_option_in_bets + 1)` so
+   * any test that doesn't explicitly care about the option-range
+   * check just gets enough headroom. Tests that DO want to exercise
+   * `ClaimOptionOutOfRange` pass `optionCount` explicitly.
    */
   async function setupMarket(
     factory: any,
@@ -71,6 +75,7 @@ describe("CoverFiPolicy", async function () {
       status?: number;
       finalOption?: number;
       bets?: { user: `0x${string}`; option: number; amount: bigint }[];
+      optionCount?: number;
     } = {},
   ) {
     const market = await viem.deployContract("MockPulseMarket");
@@ -81,6 +86,12 @@ describe("CoverFiPolicy", async function () {
     if (opts.finalOption !== undefined) {
       await market.write.setFinalOption([opts.finalOption]);
     }
+    const inferredCount =
+      opts.bets && opts.bets.length > 0
+        ? Math.max(2, ...opts.bets.map((b) => b.option + 1))
+        : 2;
+    const optionCount = opts.optionCount ?? inferredCount;
+    await market.write.setOptionCount([optionCount]);
     for (const bet of opts.bets ?? []) {
       await market.write.setUserBets([bet.user, bet.option, bet.amount]);
     }
@@ -491,6 +502,80 @@ describe("CoverFiPolicy", async function () {
         "MarketNotRunning",
         [getAddress(market.address), Status.Finalized],
       );
+    });
+
+    it("reverts ClaimOptionOutOfRange when claimOption == optionCount (just out of range)", async function () {
+      const { factory, coverFi } = await deployBase();
+      const market = await setupMarket(factory, {
+        status: Status.Running,
+        optionCount: 2,
+        // No bets — option-range check fires before userBets read.
+      });
+      const c = await coverFiAs(coverFi, alice);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        c.write.buyPolicy([market.address, 2, 5000n]),
+        coverFi,
+        "ClaimOptionOutOfRange",
+        [2, 2],
+      );
+    });
+
+    it("reverts ClaimOptionOutOfRange when claimOption == 200 (far out — also covers int8 ceiling)", async function () {
+      const { factory, coverFi } = await deployBase();
+      const market = await setupMarket(factory, {
+        status: Status.Running,
+        optionCount: 2,
+      });
+      const c = await coverFiAs(coverFi, alice);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        c.write.buyPolicy([market.address, 200, 5000n]),
+        coverFi,
+        "ClaimOptionOutOfRange",
+        [200, 2],
+      );
+    });
+
+    it("int8 belt-and-braces: malformed optionCount=130 + claimOption=128 still reverts ClaimOptionOutOfRange", async function () {
+      // If Signa's createMarket ever allowed optionCount > 128, the
+      // claimOption < optionCount clause alone would let claimOption
+      // in [128, 129] slip past (since `128 >= 130` is false), and
+      // settleByOnChainRead would treat the resulting policy as
+      // guaranteed-Miss (finalOption is int8, can never equal a
+      // uint8 > 127). The `claimOption > 127` belt-and-braces
+      // catches this exact case independently of nOptions. Test
+      // isolates that clause: only the int8 guard can revert here.
+      // userBets not seeded — the option-range check fires first
+      // (step 3, before step 4 userBets read).
+      const { factory, coverFi } = await deployBase();
+      const market = await setupMarket(factory, {
+        status: Status.Running,
+        optionCount: 130,
+      });
+      const c = await coverFiAs(coverFi, alice);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        c.write.buyPolicy([market.address, 128, 5000n]),
+        coverFi,
+        "ClaimOptionOutOfRange",
+        [128, 130],
+      );
+    });
+
+    it("accepts claimOption == optionCount - 1 (boundary; the largest valid option)", async function () {
+      const { usdc, factory, coverFi } = await deployBase();
+      // Market with 3 options [0, 1, 2]; alice has a position on
+      // option 2 (the boundary). Insurable.
+      const market = await setupMarket(factory, {
+        status: Status.Running,
+        optionCount: 3,
+        bets: [{ user: alice.account.address, option: 2, amount: USDC(500) }],
+      });
+      await fundAndApprove(usdc, alice, coverFi.address, USDC(10_000));
+      const c = await coverFiAs(coverFi, alice);
+      await c.write.buyPolicy([market.address, 2, 5000n]);
+      assert.equal(await coverFi.read.nextPolicyId(), 2n);
+      const policy = await coverFi.read.policies([1n]);
+      assert.equal(policy[6], 2); // claimOption == 2 (uint8 in struct)
+      assert.equal(policy[7], USDC(500));
     });
 
     it("reverts NoPositionToInsure when userBets is 0", async function () {

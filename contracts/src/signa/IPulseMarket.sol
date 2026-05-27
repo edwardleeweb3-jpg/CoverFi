@@ -55,6 +55,20 @@ interface IPulseMarket {
     ///         does not rely on it for `buyPolicy` (which calls
     ///         `userBets` directly).
     function hasBet(address user) external view returns (bool);
+
+    /// @notice Number of options the market exposes. Indices are
+    ///         `0..optionCount-1`. CoverFi uses this in `buyPolicy`
+    ///         to reject `claimOption >= optionCount` — without this
+    ///         check, insuring an option index the market will never
+    ///         finalize on (whether out-of-range by Signa's own
+    ///         enforcement or by the int8 ceiling on `finalOption`)
+    ///         routes straight to the Miss branch at settle time,
+    ///         making CoverFi pay full principal on a position that
+    ///         was guaranteed-to-lose at mint time.
+    ///         Return type is `uint8` per Signa Pulse's verified ABI
+    ///         (BscScan testnet 0x0eea815bb…, function selector
+    ///         0xe32fe90b).
+    function optionCount() external view returns (uint8);
 }
 
 // Sentinel `IPulseMarket.finalOption()` returns when the market was

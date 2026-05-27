@@ -30,6 +30,57 @@ funds testnet.
 | **Info** | A USDC-blacklisted owner cannot receive `claim` payouts (the `safeTransfer` reverts). This is USDC's policy, not a CoverFi bug, but worth noting for ops | **Accepted (USDC behaviour).** No code change. Operationally we'd `rescueToken` the trapped funds and reissue off-chain | n/a | n/a |
 | **Info** | Miner manipulation of `block.timestamp` (±15s) on the settlement timestamp shifts release start. Over a 365-day linear release that's ~5×10⁻⁵ % — negligible | **Accepted (no code change).** Within the protocol's tolerance | n/a | n/a |
 
+## Phase 5B.6 — Segment 5 audit pass
+
+**Scope:** post-Segment-5 contract surface — `CoverFiPolicy.sol`
+(buyPolicy redesign + settleByOnChainRead + min-cap +
+SETTLER_ROLE removal) and the new Signa interface dependencies
+(`signa/IPulseMarket.sol`, `signa/IPulseFactoryRegistry.sol`).
+Two new mocks under `src/test/` reviewed for test-correctness,
+excluded from production-readiness.
+
+**Methodology:** independent code-trace audit across (a) Signa
+trust assumptions, (b) buyPolicy bypass attempts, (c)
+settleByOnChainRead griefing + four-branch exhaustiveness, (d)
+per-policy and aggregate solvency walk-through, (e) rescueToken
+reach, (f) access-control surface, (g) standard footguns
+(reentry, overflow, release-math bounds, ctor).
+
+**Outcome:** one new HIGH (option-range guaranteed-Miss drain)
+plus one doc cleanup — both fixed in 5B.6. Two prior High items
+resolved by Segment 5 contract changes.
+
+| Severity | Finding | Status | Fix commit | Verification |
+|---|---|---|---|---|
+| **High** | `buyPolicy` accepted `uint8 claimOption` without checking it against the market's option count. For any `claimOption` not in `[0, optionCount-1]` — whether out-of-range by Signa's `placeBet` enforcement, by `optionCount > 128` (where `finalOption`'s int8 ceiling blocks Hit), or by the trivial `claimOption > 127` case — `settleByOnChainRead`'s `uint8(fin) == claimOption` comparison can never succeed. The Hit branch becomes unreachable, so any non-Void / non-Anomalous Finalized state routes to Miss. An attacker who can place a bet on such an option insures a guaranteed-loser position, collects near-full principal back via Miss release, and pays only the ~5% floor premium — money-printer attack against the payout pool, scalable with attacker capital. | **Fixed in 5B.6** — added `error ClaimOptionOutOfRange(uint8 claimOption, uint8 optionCount)` and a `claimOption < market.optionCount()` check in `buyPolicy` between the status gate and the userBets read. The check happens AFTER the factory bijection so we only call `optionCount()` into a verified Signa market. Closes both subsets (type-impossible `>127` and market-impossible `[optionCount, 127]`) without depending on Signa's `placeBet` validation. | TBD on commit | `buyPolicy › reverts ClaimOptionOutOfRange when claimOption == optionCount (just out of range)`, `… == 200 (far out — also covers int8 ceiling)`, `… accepts claimOption == optionCount - 1 (boundary; the largest valid option)` |
+| **Low** | Several NatSpec lines went stale across Segment 5: `quotePremium` comments still said "6 decimals on testnet" (Segment 5 switched to 18-decimal tUSDC); `QUOTER_ROLE` doc described the signed-quote payload as `(orderHash, kBps, expiry)` (orderHash was removed in 5B.1). Doc-only drift. | **Fixed in 5B.6** — `quotePremium` overflow note updated to 18 decimals + reworked the safety bound (1e30 principal × 1e8 numerator factor ≪ uint256 max); `QUOTER_ROLE` doc generalized to "the canonical position descriptor + (kBps, expiry)". | TBD on commit | n/a (doc only) |
+
+### Items resolved by Segment 5
+
+The prior table's two related High items are now closed:
+
+- **Settler authority concentrated** → resolved by 5B.4
+  (`SETTLER_ROLE` + `triggerSettlement` deleted; settlement is
+  now permissionless via `settleByOnChainRead`, with the outcome
+  deterministic from on-chain Signa state). Commit `563fe0d`
+  (also `570fd1a` introduced the replacement).
+- **`orderHash` not verified against Signa** → resolved by 5B.1
+  + 5B.2 (`orderHash` removed entirely; the insured position is
+  identified by `(signaMarket, buyer, claimOption)` and verified
+  at mint time via factory bijection + `market.status() ==
+  Running` + `market.optionCount() > claimOption` +
+  `market.userBets(buyer, option) > 0`). The `kBps`
+  trust-the-caller residue remains on the pre-mainnet QUOTER_ROLE
+  roadmap. Commit `586a66e` (option-count check added in 5B.6).
+
+### Newly accepted Segment-5 risks
+
+| Item | Disposition |
+|---|---|
+| Signa market never reaches `Finalized` → policy stuck Active forever | **Accepted v1.** Tracked in CLAUDE.md §9 as the "Signa stuck" item; pre-mainnet needs a multisig + timelock emergency-settle entrypoint. |
+| Signa factory is UUPS-upgradable; an enum-reorder or ABI shift in a future upgrade would silently mis-read | **Accepted v1.** Mitigated by Signa's stated SemVer commitment (FAQ §F). Worst case is DoS for new policies; existing policies are unaffected (release math is internal to CoverFi). |
+| Internal AI audit only (this audit included) | **Accepted v1.** Pre-mainnet requires a professional third-party engagement (already in the v1 audit list). |
+
 ## Phase D / E follow-through (now executed)
 
 Both phases have shipped since the audit. Verifying the items above held up:
@@ -53,8 +104,8 @@ How each accepted-as-known item gets resolved later:
 
 | Item | Resolved by | Mechanism |
 |---|---|---|
-| Settler authority concentrated (v1 = project EOA) | **Segment 5** | Write `SignaAdapter.sol` that holds `SETTLER_ROLE` and calls `triggerSettlement` from Signa settlement events. `grantRole(SETTLER_ROLE, signaAdapter)` + `revokeRole(SETTLER_ROLE, projectEOA)`. **No CoverFiPolicy change required.** |
-| `orderHash` not verified against Signa | **Segment 5** | The Signa adapter is the only sender of `triggerSettlement`; it knows the canonical orderId → orderHash mapping. Frontend `orderHashOf()` becomes the single source of truth. |
+| Settler authority concentrated (v1 = project EOA) | **Resolved in 5B.4** | `SETTLER_ROLE` + `triggerSettlement` deleted; `settleByOnChainRead` is permissionless and deterministic from on-chain Signa state. Commit `563fe0d`. |
+| `orderHash` not verified against Signa | **Resolved in 5B.1 + 5B.2 + 5B.6** | `orderHash` removed; position = (market, buyer, option), verified at mint time via factory bijection + status + optionCount + userBets. Commits `586a66e` + 5B.6 option-count check. |
 | `kBps` trusted from caller | **Pre-mainnet upgrade** | Activate `QUOTER_ROLE`: backend signs `(orderHash, kBps, expiry)`; `buyPolicy` adds a `verifyQuote(...)` step. Contract change → new deploy → re-audit. |
 | `rescueToken` can drain payout pool | **Mainnet operations** | `DEFAULT_ADMIN_ROLE` → multisig (e.g. 3-of-5) + 24–48h timelock. No code change. |
 | No on-chain solvency guarantee | **Mainnet design** | Capital pool, reinsurance, or parametric caps — design lives outside the contract layer. Out of v1 scope (PRD §9.1). |
