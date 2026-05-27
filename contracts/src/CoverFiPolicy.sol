@@ -5,20 +5,26 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IPulseMarket} from "./signa/IPulseMarket.sol";
+import {IPulseFactoryRegistry} from "./signa/IPulseFactoryRegistry.sol";
 
 /// @title CoverFiPolicy
-/// @notice Principal insurance on Signa prediction-market orders.
-///         Users `buyPolicy` against a Signa order; on a Miss settlement
-///         the policy enters 365-day linear payout claimable via
-///         `claim`; on Hit the premium is retained; on Void the premium
-///         is refunded. See `AUDIT.md` for the v1 trust model and the
-///         items deferred past mainnet.
-/// @dev    All economic math is bps-based integer arithmetic per
-///         PRD §3.2's "no floats for money" rule. Q, k, F are stored
-///         and passed in basis points out of `BPS_DENOMINATOR`.
-///         Admin-tunable Q lives on-chain; existing policies snapshot
-///         their premium at mint time and are immune to later Q
-///         changes.
+/// @notice Principal insurance on Signa Pulse positions. Users
+///         `buyPolicy` against a Signa market option they already
+///         hold; on a Miss settlement the policy enters 365-day
+///         linear payout claimable via `claim`; on Hit the premium is
+///         retained; on Void the premium is refunded. See `AUDIT.md`
+///         for the v1 trust model and items deferred past mainnet.
+/// @dev    Integrates with Signa Pulse on-chain (BSC, same chain as
+///         CoverFi). The factory registry passed at construction
+///         time is the single source of truth for which market
+///         addresses are real; `buyPolicy` enforces this bijection
+///         before reading any market state. All economic math is
+///         bps-based integer arithmetic per PRD §3.2's "no floats
+///         for money" rule. Q, k, F are stored and passed in basis
+///         points out of `BPS_DENOMINATOR`. Admin-tunable Q lives
+///         on-chain; existing policies snapshot their premium at
+///         mint time and are immune to later Q changes.
 contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -52,19 +58,23 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
 
     /// @dev Storage layout — 5 slots per policy:
     ///   slot 1: owner (20B) | status (1B) | kBps (2B) | mintedAt (4B) | settledAt (4B) = 31B
-    ///   slot 2: orderHash (32B)
+    ///   slot 2: signaMarket (20B) | claimOption (1B) = 21B (11B free)
     ///   slot 3: principal (32B)
     ///   slot 4: premium (32B)
     ///   slot 5: claimed (32B)
     /// `uint32` timestamps cap at 2106-02-07 — far enough for any
     /// horizon this v1 testnet contract will ever see.
+    /// `signaMarket` + `claimOption` are the on-chain handle for the
+    /// position this policy insures; `triggerSettlement` /
+    /// `settleByOnChainRead` (Segment 5) read live state from them.
     struct Policy {
         address owner;
         PolicyStatus status;
         uint16 kBps;
         uint32 mintedAt;
         uint32 settledAt;
-        bytes32 orderHash;
+        address signaMarket;
+        uint8 claimOption;
         uint256 principal;
         uint256 premium;
         uint256 claimed;
@@ -102,9 +112,19 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
 
     // ─── Storage ─────────────────────────────────────────────────
 
-    /// @notice The ERC20 used for premiums + payouts. MockUSDC on
-    ///         testnet; swap to real USDC at mainnet deploy time.
+    /// @notice The ERC20 used for premiums + payouts. Segment 5 wires
+    ///         this to the same testnet USDC Signa Pulse beta uses
+    ///         (`0xc03d7E…`, 18 decimals) so a future Signa-sourced
+    ///         payout flow doesn't need decimal-bridging.
     IERC20 public immutable usdc;
+
+    /// @notice Signa Pulse factory registry. Immutable so the trust
+    ///         anchor for "is this market real" can't be replaced
+    ///         post-deploy. `buyPolicy` does a bidirectional
+    ///         registration check against it before touching market
+    ///         state — see `NotRegisteredMarket` /
+    ///         `MarketRegistryMismatch`.
+    IPulseFactoryRegistry public immutable signaFactory;
 
     /// @notice Current pricing dial Q (bps) — PRD §3.2. Admin-tunable
     ///         via `setQ`; existing policies keep their locked-snapshot
@@ -112,16 +132,22 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     uint256 public qBps;
 
     /// @notice Next policy id to assign. Starts at 1 so a 0 lookup in
-    ///         `policyIdByOrderHash` unambiguously means "no policy".
+    ///         `policyIdByPosition` unambiguously means "no policy".
     uint256 public nextPolicyId;
 
     /// @notice id → Policy.
     mapping(uint256 id => Policy) public policies;
 
-    /// @notice Signa orderHash → policy id. Enforces PRD §3.1's
-    ///         "one order → at most one policy" — `buyPolicy` (Phase B3)
-    ///         reverts when this returns non-zero for the given hash.
-    mapping(bytes32 orderHash => uint256 id) public policyIdByOrderHash;
+    /// @notice (signaMarket, buyer, claimOption) → policy id. Enforces
+    ///         "one buyer-position → at most one policy" — the
+    ///         Segment 5 analogue of PRD §3.1's per-order rule, now
+    ///         that a Signa "position" is identified by the triple
+    ///         rather than an opaque order id. `buyPolicy` reverts
+    ///         when this returns non-zero. Known limitation: if the
+    ///         buyer later tops up their Signa bet, they cannot
+    ///         insure the increment via a second policy (CLAUDE.md §9).
+    mapping(address market => mapping(address buyer => mapping(uint8 option => uint256 policyId)))
+        public policyIdByPosition;
 
     // ─── Errors ──────────────────────────────────────────────────
 
@@ -135,10 +161,40 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
     ///         (PRD §3.2: k is a probability, 0..1).
     error InvalidKBps(uint16 kBps);
 
-    /// @notice Thrown when `buyPolicy` is called with an orderHash that
-    ///         already has a policy minted against it (PRD §3.1: one
-    ///         Signa order → at most one policy).
-    error OrderAlreadyInsured(bytes32 orderHash, uint256 existingPolicyId);
+    /// @notice Thrown by `buyPolicy` when the given `market` is not
+    ///         in the Signa factory's registry (`marketIds(market) == 0`).
+    error NotRegisteredMarket(address market);
+
+    /// @notice Thrown by `buyPolicy` when the factory's reverse
+    ///         lookup `markets(id)` does not match the caller-supplied
+    ///         `market`. Defensive — shouldn't occur on a well-formed
+    ///         factory, but the bijection check is symmetric with the
+    ///         frontend's `verifyMarket()`.
+    error MarketRegistryMismatch(address market, uint256 id);
+
+    /// @notice Thrown by `buyPolicy` when the Signa market is not in
+    ///         `Running` status — only undecided markets are insurable
+    ///         (D1(a)). `actualStatus` is the underlying uint8 of
+    ///         `IPulseMarket.Status` so the caller can diagnose
+    ///         without a second RPC.
+    error MarketNotRunning(address market, uint8 actualStatus);
+
+    /// @notice Thrown by `buyPolicy` when the caller has no chain-side
+    ///         bet on the requested (market, option) — `userBets`
+    ///         returned 0. Enforces D1(b): the buyer must already hold
+    ///         the position they want to insure.
+    error NoPositionToInsure(address market, address buyer, uint8 option);
+
+    /// @notice Thrown by `buyPolicy` when the caller has already
+    ///         insured the exact (market, buyer, option) position.
+    ///         Replaces v1's `OrderAlreadyInsured` (orderHash-keyed)
+    ///         with the new position-keyed dedup.
+    error PositionAlreadyInsured(
+        address market,
+        address buyer,
+        uint8 option,
+        uint256 existingPolicyId
+    );
 
     /// @notice Thrown when `triggerSettlement` is called with a
     ///         policyId that was never minted (owner == address(0)).
@@ -166,21 +222,20 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
 
     // ─── Events ──────────────────────────────────────────────────
 
-    /// @notice Emitted on every successful `buyPolicy`. `option` is the
-    ///         keccak256 of the insured option label (e.g. keccak256("Yes"))
-    ///         and is event-only — not stored on-chain. The contract
-    ///         doesn't need it for any business rule (settler resolves
-    ///         hit/miss off-chain by comparing option against the market
-    ///         outcome); the event carries it so indexers and the
-    ///         frontend can display it without a separate lookup.
+    /// @notice Emitted on every successful `buyPolicy`. `signaMarket`
+    ///         is indexed so indexers can filter for "all policies
+    ///         against market X" without scanning every log; `owner`
+    ///         is indexed for the per-user views. `claimOption` and
+    ///         the economic fields are inline (non-indexed) since
+    ///         they're rarely filter targets.
     event PolicyMinted(
         uint256 indexed policyId,
         address indexed owner,
-        bytes32 indexed orderHash,
+        address indexed signaMarket,
+        uint8 claimOption,
         uint256 principal,
         uint16 kBps,
-        uint256 premium,
-        bytes32 option
+        uint256 premium
     );
 
     /// @notice Emitted when `triggerSettlement` (Phase B4) moves a
@@ -225,31 +280,42 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
 
     // ─── Constructor ─────────────────────────────────────────────
 
-    /// @param _usdc         ERC20 used for premium + payout transfers.
-    /// @param _admin        Account that receives DEFAULT_ADMIN_ROLE
-    ///                      (may call `setQ`, grant/revoke other roles).
-    /// @param _settler      Account that receives SETTLER_ROLE (may call
-    ///                      `triggerSettlement` once it ships in B4).
-    /// @param _initialQBps  Initial pricing dial in bps. Same range rule
-    ///                      as `setQ` — must be > 0 and <= 10000. PRD
-    ///                      recommends 5000 (= Q=0.5).
+    /// @param _usdc          ERC20 used for premium + payout transfers.
+    ///                       Must match Signa Pulse's base token so
+    ///                       payouts don't need decimal-bridging.
+    /// @param _signaFactory  Signa Pulse factory registry. Immutable;
+    ///                       trust anchor for `buyPolicy`'s bijection
+    ///                       check (D1 防伪).
+    /// @param _admin         Account that receives DEFAULT_ADMIN_ROLE
+    ///                       (may call `setQ`, grant/revoke other roles,
+    ///                       `rescueToken`).
+    /// @param _settler       Account that receives SETTLER_ROLE (calls
+    ///                       `triggerSettlement`). Retained through
+    ///                       Segment 5 Phase 5B.3+; deleted in 5B.4
+    ///                       when `settleByOnChainRead` takes over.
+    /// @param _initialQBps   Initial pricing dial in bps. Same range
+    ///                       rule as `setQ` — must be > 0 and <= 10000.
+    ///                       PRD recommends 5000 (= Q=0.5).
     constructor(
         IERC20 _usdc,
+        IPulseFactoryRegistry _signaFactory,
         address _admin,
         address _settler,
         uint256 _initialQBps
     ) {
-        // Zero-address checks — once these slots are baked in (usdc is
-        // immutable; the admin/settler role grants can be revoked but
-        // not undone retroactively) there's no clean recovery, so we
-        // refuse the deploy outright.
+        // Zero-address checks — once these slots are baked in (usdc
+        // and signaFactory are immutable; the admin/settler role
+        // grants can be revoked but not undone retroactively) there's
+        // no clean recovery, so we refuse the deploy outright.
         if (address(_usdc) == address(0)) revert ZeroAddress();
+        if (address(_signaFactory) == address(0)) revert ZeroAddress();
         if (_admin == address(0)) revert ZeroAddress();
         if (_settler == address(0)) revert ZeroAddress();
         if (_initialQBps == 0 || _initialQBps > BPS_DENOMINATOR) {
             revert InvalidQBps(_initialQBps);
         }
         usdc = _usdc;
+        signaFactory = _signaFactory;
         qBps = _initialQBps;
         nextPolicyId = 1;
 
@@ -321,45 +387,90 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
 
     // ─── User: buyPolicy ─────────────────────────────────────────
 
-    /// @notice Mint a policy on a Signa order. Pulls `premium` USDC from
-    ///         msg.sender (requires prior `approve`) and records the
-    ///         policy in storage. Enforces PRD §3.1 by reverting if the
-    ///         orderHash already has a policy.
+    /// @notice Mint a policy on the caller's existing Signa Pulse
+    ///         position. Pulls `premium` USDC from msg.sender (requires
+    ///         prior `approve`) and records the policy in storage.
     ///
-    ///         v1 trust model: caller-supplied `kBps` is accepted at face
-    ///         value (see plan "已知边界 #1"). Pre-mainnet upgrade will
-    ///         require a QUOTER_ROLE-signed quote; the QUOTER_ROLE
-    ///         constant is already declared so the ABI stays stable.
+    ///         Validation order (every check before any storage write):
+    ///           1. Signa factory bijection — `market` is registered
+    ///              (id != 0) AND the reverse lookup matches (D1).
+    ///           2. Market is `Running` — only undecided markets are
+    ///              insurable (D1(a)); pre-decided markets would let
+    ///              the buyer arbitrage a known outcome.
+    ///           3. Caller has a position — `userBets(msg.sender,
+    ///              claimOption) > 0` (D1(b)). The returned value
+    ///              becomes the insured `principal` — chain truth, no
+    ///              caller-supplied number (D1(c)).
+    ///           4. Position not already insured — at most one policy
+    ///              per (market, buyer, option).
+    ///           5. Premium quote — `quotePremium` validates kBps
+    ///              range; `principal > 0` is already guaranteed by
+    ///              step 3.
+    ///
+    ///         v1 trust model: caller-supplied `kBps` is still accepted
+    ///         at face value pending the QUOTER_ROLE signed-quote model
+    ///         (AUDIT.md pre-mainnet item). `principal` is no longer
+    ///         caller-supplied — the chain-read `userBets` value is the
+    ///         single source of truth, which closes the AUDIT High item
+    ///         "orderHash not verified against Signa".
     ///
     ///         Strict checks-effects-interactions: every state write
-    ///         (including the orderHash dedup mark) happens before the
-    ///         external `safeTransferFrom`, so even a hypothetical
-    ///         malicious ERC20 with a transfer hook cannot re-enter into
-    ///         a state where this order looks uninsured.
+    ///         (including the dedup mark) happens before the external
+    ///         `safeTransferFrom`. The Signa factory + market reads in
+    ///         steps 1–3 are view calls (no reentry); CEI is what
+    ///         protects against a malicious USDC.
     ///
-    /// @param orderHash  keccak256 of the upstream Signa order id (the
-    ///                   exact hashing scheme is the frontend's
-    ///                   responsibility — see plan answer to question (a)).
-    /// @param principal  Insured amount `a` in USDC base units.
-    /// @param kBps       Implied probability snapshot in bps. 0..10_000.
-    /// @param option     keccak256 of the insured option label. Event-
-    ///                   only; not stored. The contract never reads it.
-    /// @return policyId  The freshly-minted policy's id.
+    /// @param  signaMarket  Address of a Signa Pulse market the buyer
+    ///                      already has a position in. Must be
+    ///                      registered with `signaFactory`.
+    /// @param  claimOption  The market option index this policy insures.
+    /// @param  kBps         Implied probability snapshot in bps. 0..10_000.
+    /// @return policyId     The freshly-minted policy's id.
     function buyPolicy(
-        bytes32 orderHash,
-        uint256 principal,
-        uint16 kBps,
-        bytes32 option
+        address signaMarket,
+        uint8 claimOption,
+        uint16 kBps
     ) external returns (uint256 policyId) {
         // ─ CHECKS ─
-        // quotePremium also validates principal > 0 and kBps ≤ 10_000;
-        // calling it first means we don't duplicate those checks here.
-        (, , uint256 premium) = quotePremium(principal, kBps);
-
-        uint256 existing = policyIdByOrderHash[orderHash];
-        if (existing != 0) {
-            revert OrderAlreadyInsured(orderHash, existing);
+        // 1. Factory bijection (防伪).
+        uint256 marketId = signaFactory.marketIds(signaMarket);
+        if (marketId == 0) revert NotRegisteredMarket(signaMarket);
+        if (signaFactory.markets(marketId) != signaMarket) {
+            revert MarketRegistryMismatch(signaMarket, marketId);
         }
+
+        // 2. Only undecided markets are insurable.
+        IPulseMarket.Status currentStatus =
+            IPulseMarket(signaMarket).status();
+        if (currentStatus != IPulseMarket.Status.Running) {
+            revert MarketNotRunning(signaMarket, uint8(currentStatus));
+        }
+
+        // 3. Buyer must have a real position — and that position IS
+        //    the insured principal. No caller-supplied principal.
+        uint256 principal = IPulseMarket(signaMarket).userBets(
+            msg.sender,
+            claimOption
+        );
+        if (principal == 0) {
+            revert NoPositionToInsure(signaMarket, msg.sender, claimOption);
+        }
+
+        // 4. One policy per (market, buyer, option).
+        uint256 existing =
+            policyIdByPosition[signaMarket][msg.sender][claimOption];
+        if (existing != 0) {
+            revert PositionAlreadyInsured(
+                signaMarket,
+                msg.sender,
+                claimOption,
+                existing
+            );
+        }
+
+        // 5. quotePremium validates kBps ≤ BPS_DENOMINATOR; principal
+        //    > 0 is already guaranteed by step 3.
+        (, , uint256 premium) = quotePremium(principal, kBps);
 
         // ─ EFFECTS ─
         policyId = nextPolicyId;
@@ -368,14 +479,15 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
             // free-running uint256 counter, no realistic overflow.
             nextPolicyId = policyId + 1;
         }
-        policyIdByOrderHash[orderHash] = policyId;
+        policyIdByPosition[signaMarket][msg.sender][claimOption] = policyId;
         policies[policyId] = Policy({
             owner: msg.sender,
             status: PolicyStatus.Active,
             kBps: kBps,
             mintedAt: uint32(block.timestamp),
             settledAt: 0,
-            orderHash: orderHash,
+            signaMarket: signaMarket,
+            claimOption: claimOption,
             principal: principal,
             premium: premium,
             claimed: 0
@@ -384,11 +496,11 @@ contract CoverFiPolicy is AccessControl, ReentrancyGuard {
         emit PolicyMinted(
             policyId,
             msg.sender,
-            orderHash,
+            signaMarket,
+            claimOption,
             principal,
             kBps,
-            premium,
-            option
+            premium
         );
 
         // ─ INTERACTIONS ─

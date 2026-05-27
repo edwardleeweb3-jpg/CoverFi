@@ -568,3 +568,24 @@ over.
 - **kBps signed-quote model.** Pre-mainnet hardening (audit High
   finding). Activate `QUOTER_ROLE`; require a quote signature in
   `buyPolicy`. Contract upgrade — needs new deploy + re-audit.
+- **Position top-up cannot be re-insured.** Segment 5 enforces one
+  policy per (signaMarket, buyer, claimOption) via
+  `policyIdByPosition` (the position-dedup analogue of v1's per-
+  orderHash rule). If a user buys insurance on their position and
+  later adds to that same Signa bet, the increment is uninsured —
+  `buyPolicy` reverts `PositionAlreadyInsured`. Acceptable for v1;
+  would need either (a) a per-policy "top-up" entrypoint that
+  recomputes premium on the delta, or (b) dropping the dedup
+  altogether (and accepting parallel policies for overlapping
+  amounts). Defer until product signal demands one.
+- **Signa-market-never-finalizes escape hatch.** Segment 5 D2=A
+  deletes `SETTLER_ROLE` / `triggerSettlement`, so a CoverFi policy
+  can only be settled by reading `market.status() == Finalized`. If
+  a Signa market gets stuck (Pulse bug, dispute deadlock, indefinite
+  Arbitrating loop) the corresponding policy is permanently unable
+  to release principal or refund premium. Pre-mainnet must add a
+  multisig-gated, timelocked emergency-settle entrypoint (e.g.
+  `forceSettleMiss(id)` callable only after some absurd
+  staleness threshold, e.g. policy age > 540 days, by
+  `DEFAULT_ADMIN_ROLE` behind a 48h timelock). Mirrored in
+  `contracts/AUDIT.md` "Segment 5 / pre-mainnet upgrade map".
