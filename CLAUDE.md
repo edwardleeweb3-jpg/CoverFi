@@ -156,10 +156,12 @@ bf14829 feat: contracts — claim and linear release math
 41cc6f0 feat: contracts — temporary settlement script
 ff64f4c feat: frontend — on-chain claim wiring
 
-# Phase F — Void copy + chain-read consistency + polish
+# Phase F — Void copy + chain-read consistency
 8740cb0 fix: frontend — Void policies were displayed as if premium was kept
 dd4f285 fix: /policies — three Phase F-3 follow-ups
 cb70df5 fix: /policies — PolicyRow + ReleaseBlock chain reads (F3 cleanup)
+
+# Phase G — docs + small polish
 f6b83e4 chore: polish — list-row decimal alignment + snapshot script + root readme
 ```
 
@@ -223,6 +225,7 @@ Supabase reads/writes work in production).
 | Policy claim                     | **Chain** (`CoverFiPolicy.claim`) → frontend writes the DB mirror after tx confirms.  |
 | Policy settlement (Miss/Hit/Void)| **Chain** (`CoverFiPolicy.triggerSettlement`) via `contracts/scripts/settle.ts` (project EOA holds `SETTLER_ROLE`); the same script writes the DB mirror. Segment 5 replaces with a Signa-adapter contract. |
 | Policy list page (status / static fields) | DB (`listPoliciesByOwner`).                                                  |
+| Policy list page (per-row released / claimable on `paying` rows) | **Chain** — `PolicyRow` runs `useReadContract` per row for `releasedOf(id)` + `claimableOf(id)`. |
 | Policy detail page (status / released / claimable / claimed) | **Chain** via three `useReadContract` hooks against `policies(id)` + `releasedOf(id)` + `claimableOf(id)`. DB is consulted for static fields only (principal, owner, market text). |
 | Policy overview header (released / claimable totals) | **Chain** via batched `useReadContracts` across all releasing/completed policies. DB for the static three cards. |
 | User USDC balance                | **Chain** via `useReadContract(MockUSDC.balanceOf)`.                                  |
@@ -298,10 +301,14 @@ claimable → claim → DB row updated. Settle is offline:
   query cause Lightning CSS to silently dedup and drop ~hundreds of
   lines of rules between them. There's a comment block above the
   responsive section warning about this — heed it.
-- **Commit messages.** Each step commits with a message provided by
-  the user, format `feat: step N — short label`. Co-Authored-By
-  trailer added by Claude Code. Push to `main` only after the user
-  explicitly asks.
+- **Commit messages.** The user provides the commit message;
+  conventional-commit style with a scope —
+  `feat: <scope> — <short label>`, `fix: <scope> — …`,
+  `chore: …`, `docs: …`. (Early Segment 2 commits used a
+  `feat: step N — …` format tied to that segment's 11-step plan;
+  current segments don't have numbered steps so the convention
+  dropped the "step N" prefix.) Co-Authored-By trailer added by
+  Claude Code. Push to `main` only after the user explicitly asks.
 
 ## 7. Repo orientation
 
