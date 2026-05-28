@@ -14,8 +14,9 @@ import CoverFiArtifact from "../artifacts/src/CoverFiPolicy.sol/CoverFiPolicy.js
  * Exits non-zero on any mismatch.
  */
 
-// ⚠ Set this to the deployed CoverFiPolicy address after 5B.8 step 2.
-const COVER_FI = "0x0000000000000000000000000000000000000000" as `0x${string}`;
+// Deployed in 5B.8 Phase B (block 109,977,745, tx
+// 0xad222c1950aa95c6c7f067ea77b28c1998868742591ba644b4a834d9a0c58aaa).
+const COVER_FI = "0x93F92688C5feA2C5530cddeaf796b40b4Fab72f2" as `0x${string}`;
 
 // Expected immutables / config — Segment 5.
 // Source: src/lib/contracts/signa/addresses.ts + ignition/modules/CoverFiPolicy.ts

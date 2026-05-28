@@ -33,9 +33,9 @@ import { bscTestnet } from "viem/chains";
 const SIGNA_USDC = "0xc03d7EA305485421e444070260D68ee598C1719c" as const;
 const DECIMALS = 18;
 
-// ⚠ Set this to the deployed CoverFiPolicy address after 5B.8 step 2.
-// Until then the runtime guard below aborts the run.
-const COVER_FI = "0x0000000000000000000000000000000000000000" as `0x${string}`;
+// Deployed in 5B.8 Phase B (block 109,977,745, tx
+// 0xad222c1950aa95c6c7f067ea77b28c1998868742591ba644b4a834d9a0c58aaa).
+const COVER_FI = "0x93F92688C5feA2C5530cddeaf796b40b4Fab72f2" as `0x${string}`;
 
 if (COVER_FI === "0x0000000000000000000000000000000000000000") {
   console.error(
