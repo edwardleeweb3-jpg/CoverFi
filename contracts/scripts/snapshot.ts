@@ -7,17 +7,30 @@ import CoverFiArtifact from "../artifacts/src/CoverFiPolicy.sol/CoverFiPolicy.js
 /**
  * Read-only diagnostic — prints chain state for every minted policy
  * plus the matching Supabase rows. Handy any time chain ↔ DB sync
- * needs eyeballing (e.g. after running settle.ts, after testing a
- * new claim flow, before a Phase boundary review).
+ * needs eyeballing.
  *
- * Does not mutate anything; safe to run as often as you like.
+ * Scope (Segment 5): inspects the NEW CoverFi deployment only. The
+ * v1 policies (CF-0000001..3) and their DB rows are not surfaced
+ * here — the database cutover that drops/archives them happens in
+ * the 5C frontend cutover, not in 5B.
  *
  *   cd contracts
- *   npm run snapshot              # or: node scripts/snapshot.ts
+ *   npm run snapshot
  */
 
-const COVER_FI = "0xEbdd8f124EaD6DABd7C5F3893E2A244280fE5b19" as const;
+// ⚠ Set this to the deployed CoverFiPolicy address after 5B.8 step 2.
+const COVER_FI = "0x0000000000000000000000000000000000000000" as `0x${string}`;
+
+const DECIMALS = 18;
 const STATUS_BY_ENUM = ["active", "releasing", "completed", "hit", "void"];
+
+if (COVER_FI === "0x0000000000000000000000000000000000000000") {
+  console.error(
+    "CoverFiPolicy address not set yet. Edit COVER_FI in " +
+      "scripts/snapshot.ts after the 5B.8 deploy step.",
+  );
+  process.exit(1);
+}
 
 const publicClient = createPublicClient({
   chain: bscTestnet,
@@ -50,16 +63,19 @@ for (let id = 1n; id < nextPolicyId; id++) {
 // Policy 1 gets the full release-math breakdown — handy as a sanity
 // check that releasedOf / claimableOf / policies(id).claimed are
 // internally consistent. Skip cleanly if no policies exist yet.
+// Segment-5 Policy struct layout (10 fields):
+//   [0] owner [1] status [2] kBps [3] mintedAt [4] settledAt
+//   [5] signaMarket [6] claimOption [7] principal [8] premium [9] claimed
 if (nextPolicyId > 1n) {
   const released1 = await coverFi.read.releasedOf([1n]);
   const claimable1 = await coverFi.read.claimableOf([1n]);
   const tuple1 = await coverFi.read.policies([1n]);
-  const claimed1 = tuple1[8] as bigint;
+  const claimed1 = tuple1[9] as bigint;
   console.log(
-    `\npolicy 1 release math (6-decimal USDC):` +
-      `\n  released  = ${released1}  (${formatUnits(released1, 6)} USDC)` +
-      `\n  claimed   = ${claimed1}  (${formatUnits(claimed1, 6)} USDC)` +
-      `\n  claimable = ${claimable1}  (${formatUnits(claimable1, 6)} USDC)`,
+    `\npolicy 1 release math (${DECIMALS}-decimal tUSDC):` +
+      `\n  released  = ${released1}  (${formatUnits(released1, DECIMALS)} tUSDC)` +
+      `\n  claimed   = ${claimed1}  (${formatUnits(claimed1, DECIMALS)} tUSDC)` +
+      `\n  claimable = ${claimable1}  (${formatUnits(claimable1, DECIMALS)} tUSDC)`,
   );
 }
 
