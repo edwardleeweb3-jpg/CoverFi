@@ -18,3 +18,7 @@ ignition/deployments
 # parent for git's matching rules).
 .env
 !.env.example
+
+# Integration test state (Phase 5A.4) — per-run JSON, regenerated
+# each test cycle. Not source of truth.
+scripts/5a4-state.json
