@@ -38,6 +38,7 @@ import {
   mockUsdcAbi,
   optionHashOf,
   orderHashOf,
+  USDC_DECIMALS,
 } from "@/lib/contracts";
 import { isUserRejection, revertedWith } from "@/lib/contracts/errors";
 import { TARGET_CHAIN } from "@/lib/wagmi";
@@ -53,9 +54,6 @@ import { WalletPayBox } from "./WalletPayBox";
 interface Props {
   orderId: string;
 }
-
-/** USDC base-unit decimals. */
-const USDC_DECIMALS = 6;
 
 /** Phases the pay button cycles through. */
 type Phase = "idle" | "approving" | "minting" | "saving";

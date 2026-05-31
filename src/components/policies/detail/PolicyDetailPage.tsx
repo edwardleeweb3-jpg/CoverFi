@@ -30,6 +30,7 @@ import {
   BSC_TESTNET_CHAIN_ID,
   coverFiPolicyAbi,
   getContractAddresses,
+  USDC_DECIMALS,
 } from "@/lib/contracts";
 import { isUserRejection } from "@/lib/contracts/errors";
 import { TARGET_CHAIN } from "@/lib/wagmi";
@@ -42,8 +43,6 @@ import { StatusTimeline } from "./StatusTimeline";
 interface Props {
   policyId: string;
 }
-
-const USDC_DECIMALS = 6;
 
 /** Mirrors `enum PolicyStatus { Active, Releasing, Completed, Hit, Void }`
  *  in CoverFiPolicy.sol — the uint8 index aligns with PRD §2.2. */

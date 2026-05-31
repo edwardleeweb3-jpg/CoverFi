@@ -8,6 +8,7 @@ import { useLocale, useT } from "@/hooks/useT";
 import {
   coverFiPolicyAbi,
   getContractAddresses,
+  USDC_DECIMALS,
 } from "@/lib/contracts";
 import { type PolicyBucket } from "@/lib/pricing";
 import { money } from "@/lib/format";
@@ -18,8 +19,6 @@ interface Props {
   policy: Policy;
   bucket: PolicyBucket;
 }
-
-const USDC_DECIMALS = 6;
 
 type BadgeVariant = "default" | "signal" | "good";
 

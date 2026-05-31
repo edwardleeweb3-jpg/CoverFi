@@ -45,6 +45,22 @@ export {
 } from "./addresses";
 export type { DeployedContracts } from "./addresses";
 
+// ─── Token constants ─────────────────────────────────────────────
+
+/**
+ * Premium / principal / claim amounts cross the contract boundary
+ * as `bigint` wei. The Segment 5 token is Signa Pulse beta tUSDC,
+ * which uses 18 decimals (FAQ §A; verified empirically by
+ * `contracts/scripts/probe-signa.ts`).
+ *
+ * Centralised here in 5C.2 so a future token swap is a one-line
+ * change. Segment 4 / 5A.4 used MockUSDC at 6 decimals; the 5
+ * formerly-duplicated `const USDC_DECIMALS = 6` declarations across
+ * review / list / detail / overview / db sites now all import this
+ * one symbol.
+ */
+export const USDC_DECIMALS = 18;
+
 /**
  * Typed handle for the deployed CoverFiPolicy on `chainId`. Pass a
  * `PublicClient` to get `.read.*`; pass a `WalletClient` to get

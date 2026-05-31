@@ -1,6 +1,7 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { formatUnits, type Hex } from "viem";
 import { supabase } from "@/lib/supabase";
+import { USDC_DECIMALS } from "@/lib/contracts";
 import type { Order, OptionEn, OptionZh, Policy, PolicyStatus } from "@/lib/mock";
 
 /**
@@ -22,9 +23,6 @@ import type { Order, OptionEn, OptionZh, Policy, PolicyStatus } from "@/lib/mock
  * the existing `numeric(20, 6)` columns store exact decimal USDC
  * (round-tripped via `Number(row.principal)` on read).
  */
-
-/** USDC has 6 decimals across every chain it lives on. */
-const USDC_DECIMALS = 6;
 
 export interface InsertPolicyInput {
   /** Human-readable policy id, e.g. "CF-0000232". Derived via

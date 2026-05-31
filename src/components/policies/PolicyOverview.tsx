@@ -7,6 +7,7 @@ import { useT } from "@/hooks/useT";
 import {
   coverFiPolicyAbi,
   getContractAddresses,
+  USDC_DECIMALS,
 } from "@/lib/contracts";
 import { money } from "@/lib/format";
 import type { Policy } from "@/lib/mock";
@@ -23,8 +24,6 @@ interface Props {
    *  so per-policy claim is the only path. */
   batchHint?: string;
 }
-
-const USDC_DECIMALS = 6;
 
 /**
  * Four-cell coverage overview hero + release progress row + Claim All CTA.
