@@ -12,7 +12,17 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Hardhat is a standalone subproject with generated artifacts and
+    // node:test suites; the root lint script is scoped to the Next app.
+    "contracts/**",
   ]),
+  {
+    rules: {
+      // This app intentionally uses effects for client-only hydration,
+      // IntersectionObserver reveal state, and wallet-scoped DB reads.
+      "react-hooks/set-state-in-effect": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
