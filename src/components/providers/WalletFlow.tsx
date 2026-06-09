@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect } from "react";
 import { useAccount, useConnect } from "wagmi";
 import { Icon } from "@/components/ui/Icon";
@@ -89,7 +90,7 @@ export function WalletFlow() {
           className="wallet-opt"
         >
           <span className="ic" style={{ background: "transparent" }}>
-            <img
+            <Image
               src="/wallets/metamask.svg"
               alt=""
               width={28}

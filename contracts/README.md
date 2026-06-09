@@ -1,5 +1,26 @@
 # CoverFi contracts
 
+## Current handoff note (2026-06-09)
+
+This README still contains historical Segment 4 deployment notes below.
+For the engineering handoff, use the current code and these active
+BSC Testnet values:
+
+- Active `CoverFiPolicy`:
+  `0x93F92688C5feA2C5530cddeaf796b40b4Fab72f2`.
+- Active premium token: Signa Pulse beta tUSDC
+  `0xc03d7EA305485421e444070260D68ee598C1719c`, 18 decimals.
+- Active Signa factory:
+  `0xD23323a906F6d6d28224a37Cc963d55678AA7E65`.
+- Settlement is permissionless through `settleByOnChainRead` in the
+  Segment 5 contract surface; legacy `SETTLER_ROLE` /
+  `triggerSettlement` notes below are historical.
+- Current verification baseline: `npm.cmd test` passes with 64
+  node:test tests.
+
+For full transfer context, read
+`../_docs/HANDOFF_FOR_ENGINEERING_TEAM.md` first.
+
 `CoverFiPolicy` + `MockUSDC` for BSC Testnet — Segment 4 of the CoverFi
 build (root project handoff in `../CLAUDE.md`).
 

@@ -5,6 +5,29 @@
 This file is the entry point for any new Claude Code session on this repo.
 Read it top to bottom before writing any code.
 
+## 0. Engineering handoff update (2026-06-09)
+
+The authoritative professional handoff document is
+`_docs/HANDOFF_FOR_ENGINEERING_TEAM.md`.
+
+Use the code and the current `main` branch as the source of truth. Some
+older sections below are historical notes from the step-by-step Claude
+build and still describe Segment 5 as "next"; the repository has since
+moved into a Signa Pulse-aware Segment 5 v2 state:
+
+- Active chain: BSC Testnet (chainId 97), not mainnet.
+- Active CoverFiPolicy: `0x93F92688C5feA2C5530cddeaf796b40b4Fab72f2`.
+- Active Signa Pulse beta tUSDC:
+  `0xc03d7EA305485421e444070260D68ee598C1719c` with 18 decimals.
+- Active Signa factory:
+  `0xD23323a906F6d6d28224a37Cc963d55678AA7E65`.
+- Verification baseline at handoff: root lint passes with 0 errors,
+  root production build passes, contracts test suite passes with
+  64 node:test tests.
+- Mainnet blockers remain: signed quote / trusted pricing, multisig +
+  timelock admin, solvency design, event indexing, RLS/auth hardening,
+  legal/compliance review, and a professional security audit.
+
 ## 1. Project
 
 **CoverFi** is an onchain principal-insurance protocol layered on top of

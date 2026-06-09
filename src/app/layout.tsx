@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono, Noto_Sans_SC } from "next/font/google";
 import { BrandSvgDefs } from "@/components/brand-svg-defs";
 import { AppProviders } from "@/components/providers/AppProviders";
 import { SiteHeader } from "@/components/shell/SiteHeader";
@@ -17,6 +17,13 @@ const plexMono = IBM_Plex_Mono({
   weight: ["400", "500"],
   subsets: ["latin"],
   variable: "--font-plex-mono",
+  display: "swap",
+});
+
+const notoSansSc = Noto_Sans_SC({
+  weight: ["400", "500", "600"],
+  subsets: ["latin"],
+  variable: "--font-noto-sans-sc",
   display: "swap",
 });
 
@@ -39,16 +46,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${plexSans.variable} ${plexMono.variable}`}
+      className={`${plexSans.variable} ${plexMono.variable} ${notoSansSc.variable}`}
       suppressHydrationWarning
     >
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&display=swap"
-        />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
       {/* min-h-dvh is what anchors the sticky-footer chain to the viewport.

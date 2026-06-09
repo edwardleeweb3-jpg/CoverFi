@@ -17,7 +17,7 @@
   --bad-soft: rgba(224, 86, 79, 0.13);
   --warn-soft: rgba(217, 150, 63, 0.14);
 
-  --sans: var(--font-plex-sans), "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --sans: var(--font-plex-sans), var(--font-noto-sans-sc), ui-sans-serif, system-ui, sans-serif;
   --mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, monospace;
 
   --r-s: 2px;
